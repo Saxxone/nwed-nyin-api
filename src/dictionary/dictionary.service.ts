@@ -23,8 +23,12 @@ export class DictionaryService {
     });
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} dictionary`;
+  findOne(word: string) {
+    return this.prisma.word.findUnique({
+      where: {
+        term: word,
+      },
+    });
   }
 
   update(id: number, updateDictionaryDto: UpdateDictionaryDto) {

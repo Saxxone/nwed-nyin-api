@@ -25,9 +25,9 @@ export class DictionaryController {
     return this.dictionaryService.findAll();
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.dictionaryService.findOne(+id);
+  @Get(':word')
+  findOne(@Param('word') word: string) {
+    return this.dictionaryService.findOne(word);
   }
 
   @Patch(':id')
