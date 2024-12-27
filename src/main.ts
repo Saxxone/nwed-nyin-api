@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { ValidationPipe } from '@nestjs/common'; // Import ValidationPipe
 
 async function bootstrap() {
   const ui_base_url = process.env.UI_BASE_URL || 'http://localhost:5000';
@@ -11,6 +12,7 @@ async function bootstrap() {
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     preflightContinue: false,
   });
+  app.useGlobalPipes(new ValidationPipe());
   await app.listen(8080);
   console.log(`Application is running on: ${await app.getUrl()}`);
 }

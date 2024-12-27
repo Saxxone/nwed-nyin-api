@@ -35,7 +35,9 @@ export class ArticleService {
         media: {
           create: media,
         },
-
+        sections: {
+          create: articleData.sections,
+        },
         metadata: {
           create: metadata,
         },
@@ -91,6 +93,7 @@ export class ArticleService {
     const {
       categories,
       tags,
+      sections,
       references,
       media,
       metadata,
@@ -114,18 +117,21 @@ export class ArticleService {
         ...articleData,
 
         categories: {
-          set: categories.map((id) => ({ id })),
+          set: categories?.map((id) => ({ id })) || [],
         },
         tags: { set: tags.map((id) => ({ id })) },
         references: {
-          deleteMany: {},
           create: references,
         },
-        media: { deleteMany: {}, create: media },
-        metadata: { deleteMany: {}, create: metadata },
-        versions: { deleteMany: {}, create: versions },
+        media: { create: media },
+        metadata: { create: metadata },
+        sections: {
+          create: sections,
+        },
+        versions: { create: versions },
+
         contributors: {
-          set: contributors.map((id) => ({ id })),
+          set: contributors?.map((id) => ({ id })) || [],
         },
       },
       include: {

@@ -1,13 +1,40 @@
+import { Article, MediaType, ReferenceType, Status } from '@prisma/client';
 import {
-  ArticleMetadata,
-  ArticleSection,
-  ArticleVersion,
-  MediaType,
-  ReferenceType,
-  Status,
-} from '@prisma/client';
-import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, IsArray, ValidateNested, ArrayMinSize, IsInt, IsUrl, IsDateString, Min, Max } from 'class-validator';
+  IsEnum,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUUID,
+  IsArray,
+  ValidateNested,
+  IsInt,
+  IsUrl,
+  IsDateString,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
+
+export class ArticleVersion {
+  version: number;
+  created_by: string;
+  content: any; // Replace 'any' with appropriate type if known
+}
+
+export interface ArticleSection {
+  title: string;
+
+  id: string;
+  content: string;
+  article: Article;
+  article_id: string;
+}
+
+export class ArticleMetadata {
+  keywords: string[];
+  language: string;
+  read_time: number | null;
+  complexity: string | null;
+}
 
 export class CreateArticleDto {
   @IsNotEmpty()
@@ -41,12 +68,10 @@ export class CreateArticleDto {
   @IsNotEmpty()
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ArticleSection)
   sections: ArticleSection[];
 
-
   @IsArray()
-  @IsUUID('all', { each: true })  // Validate each element as a UUID
+  @IsUUID('all', { each: true }) // Validate each element as a UUID
   contributors: string[];
 
   @IsArray()
@@ -57,7 +82,6 @@ export class CreateArticleDto {
   @IsUUID('all', { each: true })
   tags: string[];
 
-
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ReferenceDto) // Use a nested DTO for references
@@ -65,57 +89,54 @@ export class CreateArticleDto {
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => MediaDto)  // Use a nested DTO for media
+  @Type(() => MediaDto) // Use a nested DTO for media
   media: MediaDto[];
 
   @IsNotEmpty()
   @ValidateNested()
-  @Type(() => ArticleMetadata)
   metadata: ArticleMetadata;
 
   @IsArray()
   @ValidateNested({ each: true })
-  @Type(() => ArticleVersion)
   versions: ArticleVersion[];
 }
 
 // Separate DTO for References to make validation cleaner
 export class ReferenceDto {
-    @IsEnum(ReferenceType)
-    type: ReferenceType;
+  @IsEnum(ReferenceType)
+  type: ReferenceType;
 
-    @IsString()
-    @IsNotEmpty()
-    citation: string;
+  @IsString()
+  @IsNotEmpty()
+  citation: string;
 
-    @IsOptional()
-    @IsUrl()
-    url: string | null;
+  @IsOptional()
+  @IsUrl()
+  url: string | null;
 
-    @IsOptional()
-    @IsString()
-    doi: string | null;
+  @IsOptional()
+  @IsString()
+  doi: string | null;
 
-    @IsOptional()
-    @IsString()
-    isbn: string | null;
+  @IsOptional()
+  @IsString()
+  isbn: string | null;
 
-    @IsArray()
-    @IsString({ each: true }) // Each author should be a string
-    authors: string[];
+  @IsArray()
+  @IsString({ each: true }) // Each author should be a string
+  authors: string[];
 
-    @IsOptional()
-    @IsString()
-    publisher: string | null;
+  @IsOptional()
+  @IsString()
+  publisher: string | null;
 
-    @IsOptional()
-    @IsInt()
-    year: number | null;
+  @IsOptional()
+  @IsInt()
+  year: number | null;
 
-
-    @IsOptional()
-    @IsDateString()
-    access_date: Date | null;
+  @IsOptional()
+  @IsDateString()
+  access_date: Date | null;
 }
 
 export class MediaDto {
@@ -141,9 +162,8 @@ export class MediaDto {
 
   @IsOptional()
   @IsInt()
-  @Min(0)  // Assuming size can't be negative
+  @Min(0) // Assuming size can't be negative
   size: number | null;
-
 
   @IsOptional()
   @IsInt()
@@ -155,5 +175,3 @@ export class MediaDto {
   @Min(0)
   height: number | null;
 }
-
-
