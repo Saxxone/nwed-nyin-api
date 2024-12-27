@@ -1,9 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: 
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: 
-
+// This is your Prisma schema file
 generator client {
   provider        = "prisma-client-js"
   previewFeatures = ["fullTextSearch", "omitApi"]
@@ -16,23 +11,31 @@ datasource db {
 
 //articles 
 model Article {
-  id           String      @id @default(cuid())
+  id           String           @id @default(cuid())
   title        String
-  slug         String      @unique
+  slug         String           @unique
   summary      String
   body         String
   sections     Section[]
-  created_at   DateTime    @default(now())
-  updated_at   DateTime    @updatedAt
-  contributors User[]      @relation("article_contributors")
-  version      Int         @default(1)
+  created_at   DateTime         @default(now())
+  updated_at   DateTime         @updatedAt
+  deleted_at   DateTime?
+  contributors User[]           @relation("article_contributors")
+  created_by   String?
+  updated_by   String?
+  version      Int              @default(1)
   categories   Category[]
   tags         Tag[]
   references   Reference[]
-  related_from Article[]   @relation("related_articles")
-  related_to   Article[]   @relation("related_articles")
+  related_from Article[]        @relation("related_articles")
+  related_to   Article[]        @relation("related_articles")
   media        Media[]
-  status       Status      @default(DRAFT)
+  status       Status           @default(DRAFT)
+  metadata     ArticleMetadata?
+  versions     ArticleVersion[]
+
+  @@index([created_by])
+  @@index([status, created_at])
 }
 
 model Section {
@@ -41,19 +44,52 @@ model Section {
   content    String
   article    Article @relation(fields: [article_id], references: [id])
   article_id String
+
+  @@index([article_id])
+}
+
+model ArticleVersion {
+  id         String   @id @default(cuid())
+  article    Article  @relation(fields: [article_id], references: [id])
+  article_id String
+  version    Int
+  content    Json // Stores the full article state
+  created_at DateTime @default(now())
+  created_by String
+
+  @@unique([article_id, version])
+  @@index([article_id])
+}
+
+model ArticleMetadata {
+  id         String   @id @default(cuid())
+  article    Article  @relation(fields: [article_id], references: [id])
+  article_id String   @unique
+  keywords   String[] // Array of keywords
+  language   String   @default("en")
+  read_time  Int? // Estimated read time in minutes
+  complexity String? // Reading level/complexity
 }
 
 model User {
   id                String    @id @default(cuid())
   name              String
   articles          Article[] @relation("article_contributors")
-  email             String
+  email             String    @unique
   password          String
   img               String
   role              Role
+  active            Boolean   @default(true)
+  last_login        DateTime?
+  preferences       Json?
+  verified_at       DateTime?
+  two_factor_auth   Boolean   @default(false)
   created_at        DateTime  @default(now())
   updated_at        DateTime  @updatedAt
-  contributed_words Word[]    @relation("word_contributors") // And this line
+  contributed_words Word[]    @relation("word_contributors")
+
+  @@index([email])
+  @@index([role])
 }
 
 enum Role {
@@ -77,22 +113,51 @@ model Tag {
 }
 
 model Reference {
-  id          String   @id @default(cuid())
+  id          String        @id @default(cuid())
+  type        ReferenceType @default(WEBSITE)
   citation    String
   url         String?
+  doi         String? // Digital Object Identifier
+  isbn        String? // For book references
+  authors     String? // Store as JSON array
+  publisher   String?
+  year        Int?
   access_date DateTime
-  article     Article  @relation(fields: [article_id], references: [id])
+  article     Article       @relation(fields: [article_id], references: [id])
   article_id  String
+
+  @@index([article_id])
+}
+
+enum ReferenceType {
+  BOOK
+  ARTICLE
+  WEBSITE
+  JOURNAL
+  OTHER
 }
 
 model Media {
-  id         String  @id @default(cuid())
-  type       String
+  id         String    @id @default(cuid())
+  type       MediaType
   url        String
   caption    String?
   credit     String?
-  article    Article @relation(fields: [article_id], references: [id])
+  alt_text   String? // For accessibility
+  mime_type  String?
+  size       Int? // File size in bytes
+  dimensions Json? // Store width/height
+  article    Article   @relation(fields: [article_id], references: [id])
   article_id String
+
+  @@index([article_id])
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
 }
 
 enum Status {
@@ -102,20 +167,41 @@ enum Status {
 }
 
 //Dictionary
-
 model Word {
-  id            String       @id @default(cuid())
-  term          String       @unique @db.VarChar(255)
-  pronunciation String?      @db.VarChar(255)
-  etymology     String?      @db.Text
-  alt_spelling  String?      @db.Text
+  id            String         @id @default(cuid())
+  term          String         @unique
+  pronunciation String?
+  etymology     String?        @db.Text
+  alt_spelling  String?        @db.Text
   definitions   Definition[]
-  examples      Example[]
-  synonyms      Synonym[]
-  antonyms      Antonym[]
-  created_at    DateTime     @default(now())
-  updated_at    DateTime     @updatedAt
-  contributors  User[]       @relation("word_contributors")
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @updatedAt
+  deleted_at    DateTime?
+  contributors  User[]         @relation("word_contributors")
+  related_from  WordRelation[] @relation("from")
+  related_to    WordRelation[] @relation("to")
+
+  @@index([term])
+}
+
+model WordRelation {
+  id        String       @id @default(cuid())
+  word_from Word         @relation("from", fields: [from_id], references: [id])
+  from_id   String
+  word_to   Word         @relation("to", fields: [to_id], references: [id])
+  to_id     String
+  type      RelationType
+
+  @@unique([from_id, to_id, type])
+  @@index([from_id])
+  @@index([to_id])
+}
+
+enum RelationType {
+  VARIANT
+  DERIVED
+  COMPOUND
+  ROOT
 }
 
 model Definition {
@@ -125,36 +211,49 @@ model Definition {
   part_of_speech    PartOfSpeech @relation(fields: [part_of_speech_id], references: [id])
   part_of_speech_id String
   meaning           String       @db.Text
+  examples          Example[]
+  synonyms          Synonym[]
+  antonyms          Antonym[]
   order             Int?
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
+
+  @@unique([word_id, order])
+  @@index([word_id])
+  @@index([part_of_speech_id])
 }
 
 model PartOfSpeech {
   id          String       @id @default(cuid())
-  name        String       @unique @db.VarChar(50)
+  name        String       @unique
   definitions Definition[]
 }
 
 model Example {
-  id         String   @id @default(cuid())
-  word       Word     @relation(fields: [word_id], references: [id])
-  word_id    String
-  sentence   String   @db.Text
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id            String     @id @default(cuid())
+  definition    Definition @relation(fields: [definition_id], references: [id])
+  definition_id String
+  sentence      String     @db.Text
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  @@index([definition_id])
 }
 
 model Synonym {
-  id      String @id @default(cuid())
-  word    Word   @relation(fields: [word_id], references: [id])
-  word_id String
-  synonym String @db.VarChar(255)
+  id            String     @id @default(cuid())
+  definition    Definition @relation(fields: [definition_id], references: [id])
+  definition_id String
+  synonym       String     @db.VarChar(255)
+
+  @@index([definition_id])
 }
 
 model Antonym {
-  id      String @id @default(cuid())
-  word    Word   @relation(fields: [word_id], references: [id])
-  word_id String
-  antonym String @db.VarChar(255)
+  id            String     @id @default(cuid())
+  definition    Definition @relation(fields: [definition_id], references: [id])
+  definition_id String
+  antonym       String     @db.VarChar(255)
+
+  @@index([definition_id])
 }

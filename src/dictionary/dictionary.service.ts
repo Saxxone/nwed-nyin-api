@@ -16,9 +16,14 @@ export class DictionaryService {
   findAll() {
     return this.prisma.word.findMany({
       include: {
-        definitions: true,
-        examples: true,
-        synonyms: true,
+        definitions: {
+          include: {
+            part_of_speech: true,
+            examples: true,
+            synonyms: true,
+            antonyms: true,
+          },
+        },
       },
     });
   }
