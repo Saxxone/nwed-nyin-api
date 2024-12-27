@@ -1,0 +1,160 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: 
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: 
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["fullTextSearch", "omitApi"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+//articles 
+model Article {
+  id           String      @id @default(cuid())
+  title        String
+  slug         String      @unique
+  summary      String
+  body         String
+  sections     Section[]
+  created_at   DateTime    @default(now())
+  updated_at   DateTime    @updatedAt
+  contributors User[]      @relation("article_contributors")
+  version      Int         @default(1)
+  categories   Category[]
+  tags         Tag[]
+  references   Reference[]
+  related_from Article[]   @relation("related_articles")
+  related_to   Article[]   @relation("related_articles")
+  media        Media[]
+  status       Status      @default(DRAFT)
+}
+
+model Section {
+  id         String  @id @default(cuid())
+  title      String
+  content    String
+  article    Article @relation(fields: [article_id], references: [id])
+  article_id String
+}
+
+model User {
+  id                String    @id @default(cuid())
+  name              String
+  articles          Article[] @relation("article_contributors")
+  email             String
+  password          String
+  img               String
+  role              Role
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @updatedAt
+  contributed_words Word[]    @relation("word_contributors") // And this line
+}
+
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+model Category {
+  id         String    @id @default(cuid())
+  name       String    @unique
+  articles   Article[]
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
+}
+
+model Tag {
+  id       String    @id @default(cuid())
+  name     String    @unique
+  articles Article[]
+}
+
+model Reference {
+  id          String   @id @default(cuid())
+  citation    String
+  url         String?
+  access_date DateTime
+  article     Article  @relation(fields: [article_id], references: [id])
+  article_id  String
+}
+
+model Media {
+  id         String  @id @default(cuid())
+  type       String
+  url        String
+  caption    String?
+  credit     String?
+  article    Article @relation(fields: [article_id], references: [id])
+  article_id String
+}
+
+enum Status {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+//Dictionary
+
+model Word {
+  id            String       @id @default(cuid())
+  term          String       @unique @db.VarChar(255)
+  pronunciation String?      @db.VarChar(255)
+  etymology     String?      @db.Text
+  alt_spelling  String?      @db.Text
+  definitions   Definition[]
+  examples      Example[]
+  synonyms      Synonym[]
+  antonyms      Antonym[]
+  created_at    DateTime     @default(now())
+  updated_at    DateTime     @updatedAt
+  contributors  User[]       @relation("word_contributors")
+}
+
+model Definition {
+  id                String       @id @default(cuid())
+  word              Word         @relation(fields: [word_id], references: [id])
+  word_id           String
+  part_of_speech    PartOfSpeech @relation(fields: [part_of_speech_id], references: [id])
+  part_of_speech_id String
+  meaning           String       @db.Text
+  order             Int?
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+}
+
+model PartOfSpeech {
+  id          String       @id @default(cuid())
+  name        String       @unique @db.VarChar(50)
+  definitions Definition[]
+}
+
+model Example {
+  id         String   @id @default(cuid())
+  word       Word     @relation(fields: [word_id], references: [id])
+  word_id    String
+  sentence   String   @db.Text
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+}
+
+model Synonym {
+  id      String @id @default(cuid())
+  word    Word   @relation(fields: [word_id], references: [id])
+  word_id String
+  synonym String @db.VarChar(255)
+}
+
+model Antonym {
+  id      String @id @default(cuid())
+  word    Word   @relation(fields: [word_id], references: [id])
+  word_id String
+  antonym String @db.VarChar(255)
+}
