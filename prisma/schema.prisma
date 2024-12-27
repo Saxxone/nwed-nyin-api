@@ -19,7 +19,7 @@ model Article {
   sections     Section[]
   created_at   DateTime         @default(now())
   updated_at   DateTime         @updatedAt
-  deleted_at   DateTime?
+  deleted_at   DateTime?        @default(dbgenerated("now()"))
   contributors User[]           @relation("article_contributors")
   created_by   String?
   updated_by   String?
@@ -72,24 +72,34 @@ model ArticleMetadata {
 }
 
 model User {
-  id                String    @id @default(cuid())
+  id                String           @id @default(cuid())
   name              String
-  articles          Article[] @relation("article_contributors")
-  email             String    @unique
+  articles          Article[]        @relation("article_contributors")
+  email             String           @unique
   password          String
   img               String
   role              Role
-  active            Boolean   @default(true)
+  active            Boolean          @default(true)
   last_login        DateTime?
-  preferences       Json?
+  preferences       UserPreference[]
   verified_at       DateTime?
-  two_factor_auth   Boolean   @default(false)
-  created_at        DateTime  @default(now())
-  updated_at        DateTime  @updatedAt
-  contributed_words Word[]    @relation("word_contributors")
+  two_factor_auth   Boolean          @default(false)
+  created_at        DateTime         @default(now())
+  updated_at        DateTime         @updatedAt
+  contributed_words Word[]           @relation("word_contributors")
 
   @@index([email])
   @@index([role])
+}
+
+model UserPreference {
+  id      String @id @default(cuid())
+  user    User   @relation(fields: [user_id], references: [id])
+  user_id String @unique
+  key     String
+  value   String
+
+  @@unique([user_id, key])
 }
 
 enum Role {
@@ -119,7 +129,7 @@ model Reference {
   url         String?
   doi         String? // Digital Object Identifier
   isbn        String? // For book references
-  authors     String? // Store as JSON array
+  authors     Json? // Store as JSON array
   publisher   String?
   year        Int?
   access_date DateTime
@@ -146,7 +156,8 @@ model Media {
   alt_text   String? // For accessibility
   mime_type  String?
   size       Int? // File size in bytes
-  dimensions Json? // Store width/height
+  width      Int? // Separate width and height
+  height     Int? // Easier querying and validation
   article    Article   @relation(fields: [article_id], references: [id])
   article_id String
 
@@ -176,7 +187,7 @@ model Word {
   definitions   Definition[]
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
-  deleted_at    DateTime?
+  deleted_at    DateTime?      @default(dbgenerated("now()"))
   contributors  User[]         @relation("word_contributors")
   related_from  WordRelation[] @relation("from")
   related_to    WordRelation[] @relation("to")
@@ -192,7 +203,6 @@ model WordRelation {
   to_id     String
   type      RelationType
 
-  @@unique([from_id, to_id, type])
   @@index([from_id])
   @@index([to_id])
 }
@@ -218,7 +228,7 @@ model Definition {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
-  @@unique([word_id, order])
+  @@unique([word_id, part_of_speech_id, meaning])
   @@index([word_id])
   @@index([part_of_speech_id])
 }

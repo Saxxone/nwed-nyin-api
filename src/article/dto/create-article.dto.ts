@@ -1,1 +1,159 @@
-export class CreateArticleDto {}
+import {
+  ArticleMetadata,
+  ArticleSection,
+  ArticleVersion,
+  MediaType,
+  ReferenceType,
+  Status,
+} from '@prisma/client';
+import { IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, IsArray, ValidateNested, ArrayMinSize, IsInt, IsUrl, IsDateString, Min, Max } from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class CreateArticleDto {
+  @IsNotEmpty()
+  @IsString()
+  title: string;
+
+  @IsNotEmpty()
+  @IsString()
+  slug: string;
+
+  @IsNotEmpty()
+  @IsString()
+  summary: string;
+
+  @IsNotEmpty()
+  @IsString()
+  body: string;
+
+  @IsNotEmpty()
+  @IsUUID() // Assuming user IDs are UUIDs
+  created_by: string;
+
+  @IsOptional()
+  @IsUUID() // Assuming user IDs are UUIDs
+  updated_by?: string;
+
+  @IsNotEmpty()
+  @IsEnum(Status)
+  status: Status;
+
+  @IsNotEmpty()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ArticleSection)
+  sections: ArticleSection[];
+
+
+  @IsArray()
+  @IsUUID('all', { each: true })  // Validate each element as a UUID
+  contributors: string[];
+
+  @IsArray()
+  @IsUUID('all', { each: true })
+  categories: string[];
+
+  @IsArray()
+  @IsUUID('all', { each: true })
+  tags: string[];
+
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReferenceDto) // Use a nested DTO for references
+  references: ReferenceDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => MediaDto)  // Use a nested DTO for media
+  media: MediaDto[];
+
+  @IsNotEmpty()
+  @ValidateNested()
+  @Type(() => ArticleMetadata)
+  metadata: ArticleMetadata;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ArticleVersion)
+  versions: ArticleVersion[];
+}
+
+// Separate DTO for References to make validation cleaner
+export class ReferenceDto {
+    @IsEnum(ReferenceType)
+    type: ReferenceType;
+
+    @IsString()
+    @IsNotEmpty()
+    citation: string;
+
+    @IsOptional()
+    @IsUrl()
+    url: string | null;
+
+    @IsOptional()
+    @IsString()
+    doi: string | null;
+
+    @IsOptional()
+    @IsString()
+    isbn: string | null;
+
+    @IsArray()
+    @IsString({ each: true }) // Each author should be a string
+    authors: string[];
+
+    @IsOptional()
+    @IsString()
+    publisher: string | null;
+
+    @IsOptional()
+    @IsInt()
+    year: number | null;
+
+
+    @IsOptional()
+    @IsDateString()
+    access_date: Date | null;
+}
+
+export class MediaDto {
+  @IsEnum(MediaType)
+  type: MediaType;
+
+  @IsUrl()
+  url: string;
+
+  @IsString()
+  caption: string;
+
+  @IsString()
+  credit: string;
+
+  @IsOptional()
+  @IsString()
+  alt_text: string | null;
+
+  @IsOptional()
+  @IsString()
+  mime_type: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)  // Assuming size can't be negative
+  size: number | null;
+
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  width: number | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  height: number | null;
+}
+
+

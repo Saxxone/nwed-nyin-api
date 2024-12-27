@@ -6,17 +6,22 @@ import {
   Patch,
   Param,
   Delete,
+  ParseUUIDPipe,
+  NotFoundException,
 } from '@nestjs/common';
 import { DictionaryService } from './dictionary.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
+import { Word } from '@prisma/client';
 
 @Controller('dictionary')
 export class DictionaryController {
   constructor(private readonly dictionaryService: DictionaryService) {}
 
   @Post()
-  create(@Body() createDictionaryDto: CreateDictionaryDto) {
+  async create(
+    @Body() createDictionaryDto: CreateDictionaryDto,
+  ): Promise<Word> {
     return this.dictionaryService.create(createDictionaryDto);
   }
 
@@ -25,21 +30,36 @@ export class DictionaryController {
     return this.dictionaryService.findAll();
   }
 
-  @Get(':word')
-  findOne(@Param('word') word: string) {
-    return this.dictionaryService.findOne(word);
+  @Get(':term')
+  findOne(@Param('term') term: string) {
+    return this.dictionaryService.findOne(term);
   }
 
   @Patch(':id')
-  update(
-    @Param('id') id: string,
+  async update(
+    @Param('id', new ParseUUIDPipe()) id: string,
     @Body() updateDictionaryDto: UpdateDictionaryDto,
-  ) {
-    return this.dictionaryService.update(+id, updateDictionaryDto);
+  ): Promise<Word> {
+    try {
+      return await this.dictionaryService.update(id, updateDictionaryDto);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw error;
+    }
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.dictionaryService.remove(+id);
+  async remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<Word> {
+    // Use ParseUUIDPipe
+    try {
+      return await this.dictionaryService.remove(id);
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw error;
+    }
   }
 }
