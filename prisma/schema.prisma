@@ -1,6 +1,7 @@
 // This is your Prisma schema file
 generator client {
   provider        = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-1.0.x"]
   previewFeatures = ["omitApi"]
 }
 
@@ -229,7 +230,7 @@ model Definition {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
-  @@unique([word_id])
+  @@unique([word_id, part_of_speech_id, meaning])
   @@index([word_id])
   @@index([part_of_speech_id])
 }
