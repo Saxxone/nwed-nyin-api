@@ -14,19 +14,23 @@ export class DictionaryService {
       data: {
         ...wordData,
         definitions: {
-          create: definitions.map((definition) => ({
-            meaning: definition.meaning,
-            part_of_speech_id: definition.part_of_speech_id,
-            examples: {
-              create: definition.examples,
-            },
-            synonyms: {
-              create: definition.synonyms,
-            },
-            antonyms: {
-              create: definition.antonyms,
-            },
-          })),
+          create: definitions.map((definition) => {
+            return {
+              meaning: definition.meaning,
+              part_of_speech: {
+                connect: { id: definition.part_of_speech.id },
+              },
+              examples: {
+                create: definition.examples,
+              },
+              synonyms: {
+                create: definition.synonyms,
+              },
+              antonyms: {
+                create: definition.antonyms,
+              },
+            };
+          }),
         },
       },
     });
@@ -45,6 +49,10 @@ export class DictionaryService {
         },
       },
     });
+  }
+
+  async findAllPS() {
+    return this.prisma.partOfSpeech.findMany();
   }
 
   async findOne(term: string): Promise<Word | null> {
@@ -93,7 +101,11 @@ export class DictionaryService {
       });
 
       await this.prisma.definition.createMany({
-        data: definitions.map((definition) => ({ ...definition, word_id: id })),
+        data: definitions.map((definition) => ({
+          ...definition,
+          word_id: id,
+          part_of_speech_id: definition.part_of_speech.id,
+        })),
       });
     }
 

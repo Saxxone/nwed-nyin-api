@@ -27,7 +27,7 @@ export class CreateDictionaryDto {
 
   @IsOptional()
   @IsUUID()
-  contributor_id?: string; // contributor user id
+  contributor_id?: string;
 
   @IsNotEmpty()
   @IsArray()
@@ -36,14 +36,22 @@ export class CreateDictionaryDto {
   definitions: DefinitionDto[];
 }
 
+export class PartOfSpeechDto {
+  @IsNotEmpty()
+  @IsString()
+  name: string;
+
+  @IsNotEmpty()
+  @IsUUID()
+  id: string;
+}
+
 export class DefinitionDto {
   @IsNotEmpty()
   @IsString()
   meaning: string;
 
-  @IsNotEmpty()
-  @IsUUID()
-  part_of_speech_id: string;
+  part_of_speech: PartOfSpeechDto;
 
   @IsOptional()
   @IsArray()

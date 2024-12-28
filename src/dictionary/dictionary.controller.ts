@@ -18,7 +18,7 @@ import { Word } from '@prisma/client';
 export class DictionaryController {
   constructor(private readonly dictionaryService: DictionaryService) {}
 
-  @Post()
+  @Post('add')
   async create(
     @Body() createDictionaryDto: CreateDictionaryDto,
   ): Promise<Word> {
@@ -28,6 +28,11 @@ export class DictionaryController {
   @Get()
   findAll() {
     return this.dictionaryService.findAll();
+  }
+
+  @Get('parts-of-speech')
+  findAllPS() {
+    return this.dictionaryService.findAllPS();
   }
 
   @Get(':term')

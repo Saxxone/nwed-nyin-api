@@ -1,5 +1,5 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { CreateDictionaryDto } from './create-dictionary.dto';
+import { CreateDictionaryDto, PartOfSpeechDto } from './create-dictionary.dto';
 import {
   IsOptional,
   IsString,
@@ -45,8 +45,7 @@ export class DefinitionDto {
   meaning: string;
 
   @IsOptional()
-  @IsUUID()
-  part_of_speech_id: string;
+  part_of_speech: PartOfSpeechDto;
 
   @IsOptional()
   @IsArray()

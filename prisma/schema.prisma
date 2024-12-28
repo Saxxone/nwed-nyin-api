@@ -21,7 +21,7 @@ model Article {
   sections     Section[]
   created_at   DateTime         @default(now())
   updated_at   DateTime         @updatedAt
-  deleted_at   DateTime?        @default(dbgenerated("now()"))
+  deleted_at   DateTime?        @default(now())
   contributors User[]           @relation("article_contributors")
   created_by   String?
   updated_by   String?
@@ -64,11 +64,11 @@ model ArticleVersion {
 }
 
 model ArticleMetadata {
-  id         String   @id @default(cuid())
-  article    Article  @relation(fields: [article_id], references: [id])
-  article_id String   @unique
+  id         String  @id @default(cuid())
+  article    Article @relation(fields: [article_id], references: [id])
+  article_id String  @unique
   keywords   Json?
-  language   String   @default("en")
+  language   String  @default("en")
   read_time  Int?
   complexity String?
 }
@@ -189,7 +189,7 @@ model Word {
   definitions   Definition[]
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
-  deleted_at    DateTime?      @default(dbgenerated("now()"))
+  deleted_at    DateTime?      @default(now())
   contributors  User[]         @relation("word_contributors")
   related_from  WordRelation[] @relation("from")
   related_to    WordRelation[] @relation("to")
@@ -230,7 +230,7 @@ model Definition {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
-  @@unique([word_id, part_of_speech_id, meaning])
+  @@unique([word_id, part_of_speech_id])
   @@index([word_id])
   @@index([part_of_speech_id])
 }
