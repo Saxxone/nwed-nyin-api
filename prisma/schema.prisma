@@ -1,7 +1,7 @@
 // This is your Prisma schema file
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["fullTextSearch", "omitApi"]
+  previewFeatures = ["omitApi"]
 }
 
 datasource db {
@@ -65,7 +65,7 @@ model ArticleMetadata {
   id         String   @id @default(cuid())
   article    Article  @relation(fields: [article_id], references: [id])
   article_id String   @unique
-  keywords   String[]
+  keywords   Json?
   language   String   @default("en")
   read_time  Int?
   complexity String?
@@ -182,8 +182,8 @@ model Word {
   id            String         @id @default(cuid())
   term          String         @unique
   pronunciation String?
-  etymology     String?        @db.Text
-  alt_spelling  String?        @db.Text
+  etymology     String?        @db.VarChar(255)
+  alt_spelling  String?        @db.VarChar(255)
   definitions   Definition[]
   created_at    DateTime       @default(now())
   updated_at    DateTime       @updatedAt
@@ -220,7 +220,7 @@ model Definition {
   word_id           String
   part_of_speech    PartOfSpeech @relation(fields: [part_of_speech_id], references: [id])
   part_of_speech_id String
-  meaning           String       @db.Text
+  meaning           String       @db.VarChar(500)
   examples          Example[]
   synonyms          Synonym[]
   antonyms          Antonym[]
@@ -228,7 +228,7 @@ model Definition {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
-  @@unique([word_id, part_of_speech_id, meaning])
+  @@unique([word_id])
   @@index([word_id])
   @@index([part_of_speech_id])
 }
