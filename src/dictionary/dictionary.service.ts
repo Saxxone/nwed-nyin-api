@@ -87,27 +87,27 @@ export class DictionaryService {
       data: wordData,
     });
 
-    // if (definitions && definitions.length > 0) {
-    //   // Delete existing definitions and their related data.
-    //   await this.prisma.definition.deleteMany({ where: { word_id: id } });
-    //   await this.prisma.example.deleteMany({
-    //     where: { definition: { word_id: id } },
-    //   });
-    //   await this.prisma.synonym.deleteMany({
-    //     where: { definition: { word_id: id } },
-    //   });
-    //   await this.prisma.antonym.deleteMany({
-    //     where: { definition: { word_id: id } },
-    //   });
+    if (definitions && definitions.length > 0) {
+      // Delete existing definitions and their related data.
+      await this.prisma.definition.deleteMany({ where: { word_id: id } });
+      await this.prisma.example.deleteMany({
+        where: { definition: { word_id: id } },
+      });
+      await this.prisma.synonym.deleteMany({
+        where: { definition: { word_id: id } },
+      });
+      await this.prisma.antonym.deleteMany({
+        where: { definition: { word_id: id } },
+      });
 
-    //   await this.prisma.definition.createMany({
-    //     data: definitions.map((definition) => ({
-    //       ...definition,
-    //       word_id: id,
-    //       part_of_speech_id: definition.part_of_speech.id,
-    //     })),
-    //   });
-    // }
+      await this.prisma.definition.createMany({
+        data: definitions.map((definition) => ({
+          ...definition,
+          word_id: id,
+          part_of_speech_id: definition.part_of_speech.id,
+        })),
+      });
+    }
 
     return updatedWord;
   }
