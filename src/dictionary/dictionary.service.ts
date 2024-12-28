@@ -2,14 +2,13 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Word, Prisma } from '@prisma/client';
+import { Word } from '@prisma/client';
 
 @Injectable()
 export class DictionaryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createDictionaryDto: CreateDictionaryDto): Promise<Word> {
-    // Prisma expects an array of definition objects, each containing nested arrays for examples, synonyms, and antonyms
     const { definitions, ...wordData } = createDictionaryDto;
     return this.prisma.word.create({
       data: {
@@ -98,7 +97,7 @@ export class DictionaryService {
       });
     }
 
-    return updatedWord; // Or fetch the fully updated word if needed.
+    return updatedWord;
   }
 
   async remove(id: string): Promise<Word> {

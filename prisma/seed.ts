@@ -7,6 +7,7 @@ import {
   RelationType,
 } from '@prisma/client';
 import { faker } from '@faker-js/faker';
+import { Word } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -249,26 +250,42 @@ async function main() {
     );
 
     // Create word relationships
-    await Promise.all(
-      words.map(async (word) => {
-        const relatedWords = faker.helpers.arrayElements(
-          words.filter((w) => w.id !== word.id),
-          { min: 1, max: 3 },
-        );
+    const numWords = words.length; // added to make sure there is the same number of words as before
+    for (let i = 0; i < numWords; i++) {
+      // iterate over the newly created words.
+      const word = words[i];
 
-        await Promise.all(
-          relatedWords.map(async (relatedWord) => {
-            return prisma.wordRelation.create({
+      const numRelatedWords = faker.number.int({ min: 1, max: 3 });
+      // Use a Set to guarantee unique related words.
+      const relatedWordsSet = new Set<Word>();
+
+      while (relatedWordsSet.size < numRelatedWords) {
+        const relatedWord = faker.helpers.arrayElement(words);
+        if (relatedWord.id !== word.id) {
+          // Exclude self-relations
+          relatedWordsSet.add(relatedWord);
+        }
+      }
+
+      await Promise.all(
+        Array.from(relatedWordsSet).map(async (relatedWord) => {
+          try {
+            await prisma.wordRelation.create({
               data: {
-                from_id: word.id,
-                to_id: relatedWord.id,
+                word_from: { connect: { id: word.id } },
+                word_to: { connect: { id: relatedWord.id } },
                 type: faker.helpers.arrayElement(Object.values(RelationType)),
               },
             });
-          }),
-        );
-      }),
-    );
+          } catch (error) {
+            console.error(
+              `Error creating relation between ${word.term} and ${relatedWord.term}:`,
+              error,
+            );
+          }
+        }),
+      );
+    }
 
     // Connect related articles
     await Promise.all(

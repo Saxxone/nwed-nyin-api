@@ -5,7 +5,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
@@ -53,7 +53,7 @@ model ArticleVersion {
   article    Article  @relation(fields: [article_id], references: [id])
   article_id String
   version    Int
-  content    Json // Stores the full article state
+  content    Json
   created_at DateTime @default(now())
   created_by String
 
@@ -65,10 +65,10 @@ model ArticleMetadata {
   id         String   @id @default(cuid())
   article    Article  @relation(fields: [article_id], references: [id])
   article_id String   @unique
-  keywords   String[] // Array of keywords
+  keywords   String[]
   language   String   @default("en")
-  read_time  Int? // Estimated read time in minutes
-  complexity String? // Reading level/complexity
+  read_time  Int?
+  complexity String?
 }
 
 model User {

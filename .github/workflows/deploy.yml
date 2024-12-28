@@ -2,7 +2,7 @@ name: Bree API
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master" ]
 
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_PRIVATE_KEY }}
           script: |
-            cd ~/nwed-nyin-api
+            cd ~/repositories/nwed-nyin-api
             git pull origin main
             npm i
             npm run build
