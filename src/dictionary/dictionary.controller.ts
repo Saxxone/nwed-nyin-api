@@ -8,6 +8,7 @@ import {
   Delete,
   ParseUUIDPipe,
   NotFoundException,
+  Query,
 } from '@nestjs/common';
 import { DictionaryService } from './dictionary.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
@@ -33,6 +34,15 @@ export class DictionaryController {
   @Get('parts-of-speech')
   findAllPS() {
     return this.dictionaryService.findAllPS();
+  }
+
+  @Get('search')
+  async search(@Query('term') term: string): Promise<Word[]> {
+    console.log('term: ', term);
+    if (!term) {
+      return [];
+    }
+    return this.dictionaryService.search(term.trim().toLowerCase());
   }
 
   @Get(':term')

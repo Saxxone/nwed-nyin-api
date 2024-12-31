@@ -60,8 +60,10 @@ export class DictionaryService {
   }
 
   async findOne(term: string): Promise<Word | null> {
-    const word = await this.prisma.word.findUnique({
-      where: { term },
+    const word = await this.prisma.word.findFirst({
+      where: {
+        OR: [{ term: { equals: term } }, { alt_spelling: { equals: term } }],
+      },
       include: {
         definitions: {
           include: {
@@ -79,6 +81,28 @@ export class DictionaryService {
     }
 
     return word;
+  }
+
+  async search(term: string): Promise<Word[]> {
+    return this.prisma.word.findMany({
+      where: {
+        OR: [
+          { term: { contains: term } },
+          { alt_spelling: { contains: term } },
+        ],
+      },
+      include: {
+        definitions: {
+          include: {
+            part_of_speech: true,
+            examples: true,
+            synonyms: true,
+            antonyms: true,
+          },
+        },
+      },
+      take: 5,
+    });
   }
 
   async update(
