@@ -36,19 +36,23 @@ export class DictionaryService {
     });
   }
 
-  async findAll(): Promise<Word[]> {
-    return this.prisma.word.findMany({
-      include: {
-        definitions: {
-          include: {
-            part_of_speech: true,
-            examples: true,
-            synonyms: true,
-            antonyms: true,
+  async findAll(): Promise<{ words: Word[]; totalCount: number }> {
+    const [words, totalCount] = await this.prisma.$transaction([
+      this.prisma.word.findMany({
+        include: {
+          definitions: {
+            include: {
+              part_of_speech: true,
+              examples: true,
+              synonyms: true,
+              antonyms: true,
+            },
           },
         },
-      },
-    });
+      }),
+      this.prisma.word.count(),
+    ]);
+    return { words, totalCount };
   }
 
   async findAllPS() {
