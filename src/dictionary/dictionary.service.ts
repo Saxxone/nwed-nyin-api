@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -11,7 +15,7 @@ export class DictionaryService {
   async create(createDictionaryDto: CreateDictionaryDto): Promise<Word> {
     try {
       const { definitions, ...wordData } = createDictionaryDto;
-      return this.prisma.word.create({
+      return await this.prisma.word.create({
         data: {
           ...wordData,
           definitions: {
@@ -37,13 +41,13 @@ export class DictionaryService {
       });
     } catch (error) {
       if (error.code === 'P2002') {
-        throw new Error(
-          'Word with the same term or alt_spelling already exists.',
+        throw new BadRequestException(
+          'Word with the same term or alternative spelling already exists.',
         );
       } else if (error.code === 'P2025') {
         throw new NotFoundException('Part of Speech not found');
       } else {
-        throw new Error('Failed to create word.');
+        throw new BadRequestException('Failed to create word.');
       }
     }
   }
