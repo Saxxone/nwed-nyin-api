@@ -9,31 +9,43 @@ export class DictionaryService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createDictionaryDto: CreateDictionaryDto): Promise<Word> {
-    const { definitions, ...wordData } = createDictionaryDto;
-    return this.prisma.word.create({
-      data: {
-        ...wordData,
-        definitions: {
-          create: definitions.map((definition) => {
-            return {
-              meaning: definition.meaning,
-              part_of_speech: {
-                connect: { id: definition.part_of_speech.id },
-              },
-              examples: {
-                create: definition.examples,
-              },
-              synonyms: {
-                create: definition.synonyms,
-              },
-              antonyms: {
-                create: definition.antonyms,
-              },
-            };
-          }),
+    try {
+      const { definitions, ...wordData } = createDictionaryDto;
+      return this.prisma.word.create({
+        data: {
+          ...wordData,
+          definitions: {
+            create: definitions.map((definition) => {
+              return {
+                meaning: definition.meaning,
+                part_of_speech: {
+                  connect: { id: definition.part_of_speech.id },
+                },
+                examples: {
+                  create: definition.examples,
+                },
+                synonyms: {
+                  create: definition.synonyms,
+                },
+                antonyms: {
+                  create: definition.antonyms,
+                },
+              };
+            }),
+          },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (error.code === 'P2002') {
+        throw new Error(
+          'Word with the same term or alt_spelling already exists.',
+        );
+      } else if (error.code === 'P2025') {
+        throw new NotFoundException('Part of Speech not found');
+      } else {
+        throw new Error('Failed to create word.');
+      }
+    }
   }
 
   async findAll(): Promise<{ words: Word[]; totalCount: number }> {
