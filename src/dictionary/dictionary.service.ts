@@ -6,7 +6,8 @@ import {
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Word } from '@prisma/client';
+import { Definition, Prisma, Word } from '@prisma/client';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class DictionaryService {
@@ -126,34 +127,85 @@ export class DictionaryService {
     updateDictionaryDto: UpdateDictionaryDto,
   ): Promise<Word> {
     const { definitions, ...wordData } = updateDictionaryDto;
-    const updatedWord = await this.prisma.word.update({
-      where: { id },
-      data: wordData,
-    });
+    try {
+      return await this.prisma.$transaction(async (prisma) => {
+        const updated_word = await prisma.word.update({
+          where: { id },
+          data: wordData,
+        });
 
-    if (definitions && definitions.length > 0) {
-      // Delete existing definitions and their related data.
-      await this.prisma.definition.deleteMany({ where: { word_id: id } });
-      await this.prisma.example.deleteMany({
-        where: { definition: { word_id: id } },
-      });
-      await this.prisma.synonym.deleteMany({
-        where: { definition: { word_id: id } },
-      });
-      await this.prisma.antonym.deleteMany({
-        where: { definition: { word_id: id } },
-      });
+        if (definitions && definitions.length > 0) {
+          await prisma.example.deleteMany({
+            where: { definition: { word_id: id } },
+          });
+          await prisma.synonym.deleteMany({
+            where: { definition: { word_id: id } },
+          });
+          await prisma.antonym.deleteMany({
+            where: { definition: { word_id: id } },
+          });
 
-      await this.prisma.definition.createMany({
-        data: definitions.map((definition) => ({
-          ...definition,
-          word_id: id,
-          part_of_speech_id: definition.part_of_speech.id,
-        })),
+          await prisma.definition.deleteMany({ where: { word_id: id } });
+
+          const created_definitions = await Promise.all(
+            definitions.map(async (definition) => {
+              const created_definition = await prisma.definition.create({
+                data: {
+                  meaning: definition.meaning,
+                  word_id: id,
+                  part_of_speech_id: definition.part_of_speech.id,
+                },
+              });
+              return created_definition;
+            }),
+          );
+
+          for (const [index, definition] of definitions.entries()) {
+            const created_definition = created_definitions[index];
+
+            if (definition.examples) {
+              await prisma.example.createMany({
+                data: definition.examples.map((example) => ({
+                  sentence: example.sentence,
+                  definition_id: created_definition.id,
+                })),
+              });
+            }
+
+            if (definition.synonyms) {
+              await prisma.synonym.createMany({
+                data: definition.synonyms.map((synonym) => ({
+                  synonym: synonym.synonym,
+                  definition_id: created_definition.id,
+                })),
+              });
+            }
+
+            if (definition.antonyms) {
+              await prisma.antonym.createMany({
+                data: definition.antonyms.map((antonym) => ({
+                  antonym: antonym.antonym,
+                  definition_id: created_definition.id,
+                })),
+              });
+            }
+          }
+        }
+        return updated_word;
       });
+    } catch (error: any) {
+      console.log(updateDictionaryDto, error);
+      if (error instanceof Prisma.PrismaClientKnownRequestError) {
+        if (error.code === 'P2002') {
+          throw new BadRequestException(
+            'Word with the same term or alternative spelling already exists.',
+          );
+        } else if (error.code === 'P2025') {
+          throw new NotFoundException('Related record not found.');
+        }
+      }
+      throw new BadRequestException('Failed to update word.');
     }
-
-    return updatedWord;
   }
 
   async remove(id: string): Promise<Word> {

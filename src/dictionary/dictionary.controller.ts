@@ -6,7 +6,6 @@ import {
   Patch,
   Param,
   Delete,
-  ParseUUIDPipe,
   NotFoundException,
   Query,
 } from '@nestjs/common';
@@ -50,9 +49,9 @@ export class DictionaryController {
     return this.dictionaryService.findOne(term);
   }
 
-  @Patch(':id')
+  @Patch('update/:id')
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
     @Body() updateDictionaryDto: UpdateDictionaryDto,
   ): Promise<Word> {
     try {
@@ -65,9 +64,8 @@ export class DictionaryController {
     }
   }
 
-  @Delete(':id')
-  async remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<Word> {
-    // Use ParseUUIDPipe
+  @Delete('delete/:id')
+  async remove(@Param('id') id: string): Promise<Word> {
     try {
       return await this.dictionaryService.remove(id);
     } catch (error) {
