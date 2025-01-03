@@ -227,9 +227,6 @@ model Definition {
   order             Int?
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
-
-  @@unique([word_id])
-  @@index([word_id])
 }
 
 model PartOfSpeech {
