@@ -80,7 +80,7 @@ export class DictionaryService {
   async findOne(term: string): Promise<Word | null> {
     const word = await this.prisma.word.findFirst({
       where: {
-        OR: [{ term: { equals: term } }, { alt_spelling: { equals: term } }],
+        term: term,
       },
       include: {
         definitions: {
