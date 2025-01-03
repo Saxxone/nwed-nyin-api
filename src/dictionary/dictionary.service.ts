@@ -56,7 +56,7 @@ export class DictionaryService {
   async findAll(): Promise<{ words: Word[]; totalCount: number }> {
     const [words, totalCount] = await this.prisma.$transaction([
       this.prisma.word.findMany({
-        orderBy: { term: 'asc', alt_spelling: 'asc' },
+        orderBy: { term: 'asc' },
         include: {
           definitions: {
             include: {
