@@ -6,8 +6,7 @@ import {
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { Definition, Prisma, Word } from '@prisma/client';
-import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { Prisma, Word } from '@prisma/client';
 
 @Injectable()
 export class DictionaryService {

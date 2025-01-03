@@ -228,9 +228,8 @@ model Definition {
   created_at        DateTime     @default(now())
   updated_at        DateTime     @updatedAt
 
-  @@unique([word_id, part_of_speech_id])
+  @@unique([word_id])
   @@index([word_id])
-  @@index([part_of_speech_id])
 }
 
 model PartOfSpeech {
