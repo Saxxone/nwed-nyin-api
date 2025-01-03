@@ -181,7 +181,7 @@ enum Status {
 
 //Dictionary
 model Word {
-  id            String         @id @default(cuid())
+  id            String         @id @unique @default(cuid())
   term          String
   pronunciation String?
   etymology     String?        @db.VarChar(255)
@@ -193,8 +193,6 @@ model Word {
   contributors  User[]         @relation("word_contributors")
   related_from  WordRelation[] @relation("from")
   related_to    WordRelation[] @relation("to")
-
-  @@index([term, alt_spelling])
 }
 
 model WordRelation {
