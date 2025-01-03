@@ -1,13 +1,13 @@
 // This is your Prisma schema file
 generator client {
   provider        = "prisma-client-js"
-  binaryTargets = ["native", "debian-openssl-1.0.x"]
+  binaryTargets   = ["native", "debian-openssl-1.0.x"]
   previewFeatures = ["omitApi"]
 }
 
 datasource db {
-  provider = "mysql"
-  url      = env("DATABASE_URL")
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
@@ -182,7 +182,7 @@ enum Status {
 //Dictionary
 model Word {
   id            String         @id @default(cuid())
-  term          String         @unique
+  term          String
   pronunciation String?
   etymology     String?        @db.VarChar(255)
   alt_spelling  String?        @db.VarChar(255)
@@ -194,7 +194,7 @@ model Word {
   related_from  WordRelation[] @relation("from")
   related_to    WordRelation[] @relation("to")
 
-  @@index([term])
+  @@index([term, alt_spelling])
 }
 
 model WordRelation {
