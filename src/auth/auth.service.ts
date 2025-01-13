@@ -18,6 +18,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtPayload } from './auth.guard';
 import { Request } from 'express';
 
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -67,6 +68,7 @@ export class AuthService {
   }
 
   async signInGoogle(token: string): Promise<Partial<AuthUser>> {
+    console.log(token);
     const payload: GoogleAuthUser = await this.jwtService.decode(token);
 
     const user = await this.userService.findUser(payload.email, {
@@ -76,24 +78,24 @@ export class AuthService {
     const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
     const default_img = process.env.DEFAULT_PROFILE_IMG;
 
-    if (!user) {
-      throw new UnauthorizedException();
-    }
-
     if (client_id !== payload.aud) {
       throw new UnauthorizedException();
     }
 
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+    if (user.password) delete user.password;
+
     if (user.img === default_img) {
       return await this.updateUserProfile(user, payload, default_img);
-    } else {
-      if (user.password) delete user.password;
-
-      return {
-        ...user,
-        ...(await this.generateTokens(user)),
-      };
     }
+    const new_user = {
+      ...user,
+      ...(await this.generateTokens(user)),
+    };
+    console.log(new_user);
+    return new_user;
   }
 
   async signUpGoogle(token: string): Promise<Partial<AuthUser>> {
@@ -109,37 +111,36 @@ export class AuthService {
 
     const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
 
-    if (user) {
-      throw new NotAcceptableException();
-    }
-
     if (client_id !== payload.aud) {
       throw new UnauthorizedException();
     }
 
-    try {
-      const { url, file } = this.createImgPath();
-      await this.downloadImage(payload.picture, file);
-      img_url = url;
-    } catch (error) {
-      console.error('Error downloading or saving image:', error);
+    if (user) {
+      this.signInGoogle(token);
+    } else {
+      try {
+        const { url, file } = this.createImgPath();
+        await this.downloadImage(payload.picture, file);
+        img_url = url;
+      } catch (error) {
+        console.error('Error downloading or saving image:', error);
+      }
+
+      const u: CreateFedUserDto = {
+        name: payload.name,
+        email: payload.email,
+        img: img_url,
+      };
+
+      const new_user = await this.userService.createFedUser(u);
+
+      if (new_user.password) delete new_user.password;
+
+      return {
+        ...new_user,
+        ...(await this.generateTokens(new_user)),
+      };
     }
-
-    const u: CreateFedUserDto = {
-      name: payload.name,
-      username: payload.email.split('@')[0],
-      email: payload.email,
-      img: img_url,
-    };
-
-    const new_user = await this.userService.createFedUser(u);
-
-    if (new_user.password) delete new_user.password;
-
-    return {
-      ...new_user,
-      ...(await this.generateTokens(new_user)),
-    };
   }
 
   private async updateUserProfile(
@@ -175,12 +176,14 @@ export class AuthService {
     }
   }
 
-  async refresh(refreshToken: string): Promise<{ access_token: string }> {
+  async refresh(refresh_token: string): Promise<{ access_token: string }> {
     try {
-      const refreshTokenPayload = await this.verifyRefreshToken(refreshToken);
+      const refresh_token_payload =
+        await this.verifyrefresh_token(refresh_token);
 
-      const newAccessToken =
-        await this.generateAccessToken(refreshTokenPayload);
+      const newAccessToken = await this.generateAccessToken(
+        refresh_token_payload,
+      );
       return { access_token: newAccessToken };
     } catch (error) {
       throw new UnauthorizedException(error);
@@ -189,53 +192,54 @@ export class AuthService {
 
   async generateAccessToken(payload: JwtPayload): Promise<string> {
     const newAccessToken = await this.signToken({
-      id: payload.userId,
+      id: payload.user_id,
       email: payload.sub,
-      username: payload.username,
     } as User);
 
-    await this.saveToken(payload.userId, newAccessToken, false);
+    await this.saveToken(payload.user_id, newAccessToken, false);
     return newAccessToken;
   }
 
-  async verifyRefreshToken(token: string): Promise<JwtPayload> {
-    const refreshTokenPayload: JwtPayload = await this.jwtService.verifyAsync(
+  async verifyrefresh_token(token: string): Promise<JwtPayload> {
+    const refresh_token_payload: JwtPayload = await this.jwtService.verifyAsync(
       token,
       {
         secret: jwtConstants.refreshSecret,
       },
     );
 
-    const storedRefreshToken = await this.prisma.authToken.findUnique({
+    const storedrefresh_token = await this.prisma.authToken.findUnique({
       where: {
-        userId_isRefreshToken: {
-          userId: refreshTokenPayload.userId,
-          isRefreshToken: true,
+        user_id_is_refresh_token: {
+          user_id: refresh_token_payload.user_id,
+          is_refresh_token: true,
         },
       },
     });
 
     if (
-      !storedRefreshToken ||
-      storedRefreshToken.token !== token ||
-      storedRefreshToken.expiresAt < new Date()
+      !storedrefresh_token ||
+      storedrefresh_token.token !== token ||
+      storedrefresh_token.expires_at < new Date()
     ) {
       throw new UnauthorizedException('Invalid refresh token');
     }
-    return refreshTokenPayload;
+    return refresh_token_payload;
   }
 
   async verifyAccessToken(token: string, request: Request, is_public: boolean) {
+    const token_hash = await this.hashToken(token);
+
     try {
       const payload: JwtPayload = await this.jwtService.verifyAsync(token, {
         secret: jwtConstants.secret,
       });
 
       const existing_token = await this.prisma.authToken.findUnique({
-        where: { token },
+        where: { token_hash },
       });
 
-      if (!existing_token || existing_token.userId !== payload.userId) {
+      if (!existing_token || existing_token.user_id !== payload.user_id) {
         throw new UnauthorizedException('Invalid token');
       }
 
@@ -248,42 +252,42 @@ export class AuthService {
               secret: jwtConstants.refreshSecret,
             });
 
-          const refreshToken = await this.prisma.authToken.findUnique({
+          const refresh_token = await this.prisma.authToken.findUnique({
             where: {
-              userId_isRefreshToken: {
-                userId: refresh_token_payload.userId,
-                isRefreshToken: true,
+              user_id_is_refresh_token: {
+                user_id: refresh_token_payload.user_id,
+                is_refresh_token: true,
               },
             },
           });
 
-          if (!refreshToken || refreshToken.token !== token) {
+          if (!refresh_token || refresh_token.token !== token) {
             throw new UnauthorizedException('Invalid refresh token.');
           }
 
           const new_access_token = await this.signToken({
-            id: refresh_token_payload.userId,
+            id: refresh_token_payload.user_id,
             email: refresh_token_payload.sub,
-            username: refresh_token_payload.username,
           } as User);
 
           const access_token_expires_at = new Date(Date.now() + 15 * 60 * 1000);
           await this.prisma.authToken.upsert({
             where: {
-              userId_isRefreshToken: {
-                userId: refresh_token_payload.userId,
-                isRefreshToken: false,
+              user_id_is_refresh_token: {
+                user_id: refresh_token_payload.user_id,
+                is_refresh_token: false,
               },
             },
             create: {
               token: new_access_token,
-              userId: refresh_token_payload.userId,
-              expiresAt: access_token_expires_at,
-              isRefreshToken: false,
+              token_hash: token_hash,
+              user_id: refresh_token_payload.user_id,
+              expires_at: access_token_expires_at,
+              is_refresh_token: false,
             },
             update: {
               token: new_access_token,
-              expiresAt: access_token_expires_at,
+              expires_at: access_token_expires_at,
             },
           });
 
@@ -302,7 +306,7 @@ export class AuthService {
     user: User,
   ): Promise<{ access_token: string; refresh_token: string }> {
     const access_token = await this.signToken(user);
-    const refresh_token = await this.generateRefreshToken(user);
+    const refresh_token = await this.generaterefresh_token(user);
 
     await this.saveToken(user.id, access_token, false);
     await this.saveToken(user.id, refresh_token, true);
@@ -310,11 +314,14 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
+  private async hashToken(token: string) {
+    return await bcrypt.hash(token, 1);
+  }
+
   async signToken(user: User): Promise<string> {
     const payload = {
       sub: user.email,
-      username: user.username,
-      userId: user.id,
+      user_id: user.id,
     };
     return this.jwtService.signAsync(payload, {
       secret: jwtConstants.secret,
@@ -322,11 +329,10 @@ export class AuthService {
     });
   }
 
-  private async generateRefreshToken(user: User): Promise<string> {
+  private async generaterefresh_token(user: User): Promise<string> {
     const payload = {
       sub: user.email,
-      username: user.username,
-      userId: user.id,
+      user_id: user.id,
     };
     return this.jwtService.signAsync(payload, {
       secret: jwtConstants.refreshSecret,
@@ -335,22 +341,24 @@ export class AuthService {
   }
 
   private async saveToken(
-    userId: string,
+    user_id: string,
     token: string,
-    isRefreshToken: boolean,
+    is_refresh_token: boolean,
   ): Promise<void> {
-    const expiresAt = new Date(
-      Date.now() + (isRefreshToken ? 7 : 15) * 60 * 1000,
+    const expires_at = new Date(
+      Date.now() + (is_refresh_token ? 7 : 15) * 60 * 1000,
     );
+    const token_hash = await this.hashToken(token);
 
     await this.prisma.authToken.upsert({
-      where: { userId_isRefreshToken: { userId, isRefreshToken } },
-      update: { token, expiresAt },
+      where: { user_id_is_refresh_token: { user_id, is_refresh_token } },
+      update: { token, expires_at },
       create: {
-        userId,
+        user_id,
         token,
-        isRefreshToken,
-        expiresAt,
+        token_hash,
+        is_refresh_token,
+        expires_at,
       },
     });
   }

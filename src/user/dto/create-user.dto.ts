@@ -20,10 +20,6 @@ export class CreateUserDto {
   @IsNotEmpty()
   name: string;
 
-  @IsString()
-  @IsNotEmpty()
-  username: string;
-
   @Allow()
   bio?: string;
 
@@ -45,10 +41,6 @@ export class CreateFedUserDto {
   @IsNotEmpty()
   name: string;
 
-  @IsString()
-  @IsNotEmpty()
-  username: string;
-
   @Allow()
   bio?: string;
 
@@ -59,6 +51,4 @@ export class CreateFedUserDto {
   @Allow()
   @IsString()
   banner?: string;
-
-  publicKey?: string;
 }

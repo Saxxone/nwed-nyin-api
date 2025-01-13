@@ -26,7 +26,7 @@ export class FileService {
     const pendingFiles = await this.prisma.file.findMany({
       where: {
         status: Status.PENDING,
-        createdAt: {
+        created_at: {
           lt: twentyFourHoursAgo,
         },
       },
@@ -82,7 +82,7 @@ export class FileService {
   }
 
   async getFilesUrls(
-    fileIds: string[] | Prisma.PostCreatemediaInput[],
+    fileIds: string[],
   ): Promise<{ url: string; type: string }[]> {
     return await Promise.all(
       fileIds.map(async (fileId) => {

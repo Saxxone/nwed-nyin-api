@@ -15,8 +15,7 @@ import { ModuleRef } from '@nestjs/core';
 
 export interface JwtPayload {
   sub: string;
-  username: string;
-  userId: string;
+  user_id: string;
 }
 
 export const IS_PUBLIC_KEY = 'isPublic';

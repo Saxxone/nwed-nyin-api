@@ -77,7 +77,7 @@ model User {
   name              String
   articles          Article[]        @relation("article_contributors")
   email             String           @unique
-  password          String
+  password          String?
   img               String
   role              Role
   active            Boolean          @default(true)
@@ -89,6 +89,7 @@ model User {
   updated_at        DateTime         @updatedAt
   contributed_words Word[]           @relation("word_contributors")
   files             File[] @relation("UserToFiles")
+  auth_token                 AuthToken[] @relation("UserToAuthTokens")
 
   @@index([email])
   @@index([role])
@@ -280,9 +281,25 @@ model File {
   path         String
   mimetype     String
   status       Status    @default(PENDING)
-  owner   User   @relation("UserToFiles", fields: [ownerId], references: [id])
-  ownerId String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  deletedAt    DateTime?
+  owner   User   @relation("UserToFiles", fields: [owner_id], references: [id])
+  owner_id String
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+  deleted_at    DateTime?
+}
+
+
+model AuthToken {
+  id             String   @id @default(uuid())
+  user_id         String
+  user           User     @relation("UserToAuthTokens", fields: [user_id], references: [id])
+  token          String   @db.Text 
+  token_hash      String   @unique
+  expires_at      DateTime
+  created_at      DateTime @default(now())
+  updated_at      DateTime @updatedAt
+  is_refresh_token Boolean  @default(false)
+
+  @@unique([user_id, is_refresh_token])
+  
 }
