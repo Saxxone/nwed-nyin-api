@@ -11,7 +11,7 @@ CREATE TABLE `Article` (
     `created_by` VARCHAR(191) NULL,
     `updated_by` VARCHAR(191) NULL,
     `version` INTEGER NOT NULL DEFAULT 1,
-    `status` ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED') NOT NULL DEFAULT 'DRAFT',
+    `status` ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED', 'PENDING', 'APPROVED', 'REJECTED', 'UPLOADED', 'DELETED', 'SEEN') NOT NULL DEFAULT 'DRAFT',
 
     UNIQUE INDEX `Article_slug_key`(`slug`),
     INDEX `Article_created_by_idx`(`created_by`),
@@ -157,8 +157,7 @@ CREATE TABLE `Word` (
     `updated_at` DATETIME(3) NOT NULL,
     `deleted_at` DATETIME(3) NULL DEFAULT CURRENT_TIMESTAMP(3),
 
-    UNIQUE INDEX `Word_term_key`(`term`),
-    INDEX `Word_term_idx`(`term`),
+    UNIQUE INDEX `Word_id_key`(`id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -184,9 +183,6 @@ CREATE TABLE `Definition` (
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at` DATETIME(3) NOT NULL,
 
-    INDEX `Definition_word_id_idx`(`word_id`),
-    INDEX `Definition_part_of_speech_id_idx`(`part_of_speech_id`),
-    UNIQUE INDEX `Definition_word_id_part_of_speech_id_key`(`word_id`, `part_of_speech_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -228,6 +224,25 @@ CREATE TABLE `Antonym` (
     `antonym` VARCHAR(255) NOT NULL,
 
     INDEX `Antonym_definition_id_idx`(`definition_id`),
+    PRIMARY KEY (`id`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `File` (
+    `id` VARCHAR(191) NOT NULL,
+    `originalname` VARCHAR(191) NOT NULL,
+    `filename` VARCHAR(191) NOT NULL,
+    `size` INTEGER NOT NULL,
+    `type` VARCHAR(191) NOT NULL,
+    `url` VARCHAR(191) NOT NULL,
+    `path` VARCHAR(191) NOT NULL,
+    `mimetype` VARCHAR(191) NOT NULL,
+    `status` ENUM('DRAFT', 'PUBLISHED', 'ARCHIVED', 'PENDING', 'APPROVED', 'REJECTED', 'UPLOADED', 'DELETED', 'SEEN') NOT NULL DEFAULT 'PENDING',
+    `ownerId` VARCHAR(191) NOT NULL,
+    `createdAt` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    `updatedAt` DATETIME(3) NOT NULL,
+    `deletedAt` DATETIME(3) NULL,
+
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -314,6 +329,9 @@ ALTER TABLE `Synonym` ADD CONSTRAINT `Synonym_definition_id_fkey` FOREIGN KEY (`
 
 -- AddForeignKey
 ALTER TABLE `Antonym` ADD CONSTRAINT `Antonym_definition_id_fkey` FOREIGN KEY (`definition_id`) REFERENCES `Definition`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE `File` ADD CONSTRAINT `File_ownerId_fkey` FOREIGN KEY (`ownerId`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE `_article_contributors` ADD CONSTRAINT `_article_contributors_A_fkey` FOREIGN KEY (`A`) REFERENCES `Article`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
