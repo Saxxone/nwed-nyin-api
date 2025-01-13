@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { ValidationPipe } from '@nestjs/common'; // Import ValidationPipe
+import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
   const ui_base_url = process.env.UI_BASE_URL || 'https://nwednyin.org';
