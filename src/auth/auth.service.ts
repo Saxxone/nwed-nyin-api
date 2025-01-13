@@ -68,34 +68,36 @@ export class AuthService {
   }
 
   async signInGoogle(token: string): Promise<Partial<AuthUser>> {
-    console.log(token);
-    const payload: GoogleAuthUser = await this.jwtService.decode(token);
+    try {
+      const payload: GoogleAuthUser = await this.jwtService.decode(token);
 
-    const user = await this.userService.findUser(payload.email, {
-      withPassword: true,
-    });
+      const user = await this.userService.findUser(payload.email, {
+        withPassword: true,
+      });
 
-    const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
-    const default_img = process.env.DEFAULT_PROFILE_IMG;
+      const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
+      const default_img = process.env.DEFAULT_PROFILE_IMG;
 
-    if (client_id !== payload.aud) {
-      throw new UnauthorizedException();
+      if (client_id !== payload.aud) {
+        throw new UnauthorizedException();
+      }
+
+      if (!user) {
+        throw new UnauthorizedException();
+      }
+      const { password, ...rest } = user;
+
+      if (user.img === default_img) {
+        return await this.updateUserProfile(user, payload, default_img);
+      }
+      return {
+        ...rest,
+        ...(await this.generateTokens(user)),
+      };
+    } catch (error) {
+      console.error('Error in signInGoogle:', error); // Important: Log the error
+      throw error;
     }
-
-    if (!user) {
-      throw new UnauthorizedException();
-    }
-    if (user.password) delete user.password;
-
-    if (user.img === default_img) {
-      return await this.updateUserProfile(user, payload, default_img);
-    }
-    const new_user = {
-      ...user,
-      ...(await this.generateTokens(user)),
-    };
-    console.log(new_user);
-    return new_user;
   }
 
   async signUpGoogle(token: string): Promise<Partial<AuthUser>> {
@@ -116,7 +118,7 @@ export class AuthService {
     }
 
     if (user) {
-      this.signInGoogle(token);
+      return this.signInGoogle(token);
     } else {
       try {
         const { url, file } = this.createImgPath();
