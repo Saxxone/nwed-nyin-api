@@ -13,6 +13,7 @@ import { DictionaryService } from './dictionary.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 import { Word } from '@prisma/client';
+import { Public } from 'src/auth/auth.guard';
 
 @Controller('dictionary')
 export class DictionaryController {
@@ -25,6 +26,7 @@ export class DictionaryController {
     return this.dictionaryService.create(createDictionaryDto);
   }
 
+  @Public()
   @Get()
   findAll() {
     return this.dictionaryService.findAll();
@@ -35,6 +37,7 @@ export class DictionaryController {
     return this.dictionaryService.findAllPS();
   }
 
+  @Public()
   @Get('search')
   async search(@Query('term') term: string): Promise<Word[]> {
     console.log('term: ', term);
@@ -44,6 +47,7 @@ export class DictionaryController {
     return this.dictionaryService.search(term.trim().toLowerCase());
   }
 
+  @Public()
   @Get(':term')
   findOne(@Param('term') term: string) {
     return this.dictionaryService.findOne(term);

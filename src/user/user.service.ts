@@ -30,7 +30,6 @@ export class UserService {
       role: Role.EDITOR,
     };
 
-    console.log(user);
     return await this.prisma.user.create({ data: user });
   }
 

@@ -1,10 +1,9 @@
-import { Article, MediaType, ReferenceType, Status } from '@prisma/client';
+import { Article, MediaType, ReferenceType } from '@prisma/client';
 import {
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
-  IsUUID,
   IsArray,
   ValidateNested,
   IsInt,
@@ -22,7 +21,6 @@ export class ArticleVersion {
 
 export interface ArticleSection {
   title: string;
-
   id: string;
   content: string;
   article: Article;
@@ -43,62 +41,13 @@ export class CreateArticleDto {
 
   @IsNotEmpty()
   @IsString()
-  slug: string;
-
-  @IsNotEmpty()
-  @IsString()
-  summary: string;
-
-  @IsNotEmpty()
-  @IsString()
-  body: string;
-
-  @IsNotEmpty()
-  @IsUUID() // Assuming user IDs are UUIDs
-  created_by: string;
+  content: string;
 
   @IsOptional()
-  @IsUUID() // Assuming user IDs are UUIDs
-  updated_by?: string;
-
-  @IsNotEmpty()
-  @IsEnum(Status)
-  status: Status;
-
-  @IsNotEmpty()
   @IsArray()
   @ValidateNested({ each: true })
-  sections: ArticleSection[];
-
-  @IsArray()
-  @IsUUID('all', { each: true }) // Validate each element as a UUID
-  contributors: string[];
-
-  @IsArray()
-  @IsUUID('all', { each: true })
-  categories: string[];
-
-  @IsArray()
-  @IsUUID('all', { each: true })
-  tags: string[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ReferenceDto) // Use a nested DTO for references
-  references: ReferenceDto[];
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => MediaDto) // Use a nested DTO for media
-  media: MediaDto[];
-
-  @IsNotEmpty()
-  @ValidateNested()
-  metadata: ArticleMetadata;
-
-  @IsArray()
-  @ValidateNested({ each: true })
-  versions: ArticleVersion[];
+  @Type(() => MediaDto)
+  media: MediaDto[] | null;
 }
 
 // Separate DTO for References to make validation cleaner

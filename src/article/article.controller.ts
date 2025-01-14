@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Request,
   ParseUUIDPipe,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,21 +14,27 @@ import { ArticleService } from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { Article } from '@prisma/client';
+import { Public } from 'src/auth/auth.guard';
 
 @Controller('article')
 export class ArticleController {
   constructor(private readonly articleService: ArticleService) {}
 
   @Post('publish')
-  create(@Body() createArticleDto: CreateArticleDto): Promise<Article> {
-    return this.articleService.create(createArticleDto);
+  create(
+    @Body() createArticleDto: CreateArticleDto,
+    @Request() req: any,
+  ): Promise<Article> {
+    return this.articleService.create(createArticleDto, req.user.sub);
   }
 
+  @Public()
   @Get('slug')
   findAll(): Promise<Article[]> {
     return this.articleService.findAll();
   }
 
+  @Public()
   @Get(':id')
   findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<Article> {
     return this.articleService.findOne(id);
@@ -37,9 +44,14 @@ export class ArticleController {
   async update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() updateArticleDto: UpdateArticleDto,
+    @Request() req: any,
   ): Promise<Article> {
     try {
-      return await this.articleService.update(id, updateArticleDto);
+      return await this.articleService.update(
+        id,
+        updateArticleDto,
+        req.user.sub,
+      );
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

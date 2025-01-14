@@ -1,10 +1,7 @@
-import {
-  Injectable,
-  UnauthorizedException,
-  NotAcceptableException,
-} from '@nestjs/common';
+import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { UserService } from '../user/user.service';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { JwtService } from '@nestjs/jwt';
 import { jwtConstants } from './constants';
 import { GoogleAuthUser, AuthUser } from './dto/sign-in.dto';
@@ -18,7 +15,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtPayload } from './auth.guard';
 import { Request } from 'express';
 
-
 @Injectable()
 export class AuthService {
   constructor(
@@ -28,7 +24,6 @@ export class AuthService {
   ) {}
 
   async signIn(email: string, pass: string): Promise<Partial<AuthUser>> {
-    console.log(email, pass);
     const user = await this.userService.findUser(email, { withPassword: true });
 
     if (!user) {
@@ -68,36 +63,43 @@ export class AuthService {
   }
 
   async signInGoogle(token: string): Promise<Partial<AuthUser>> {
-    try {
-      const payload: GoogleAuthUser = await this.jwtService.decode(token);
+    return await this.prisma.$transaction(async (prisma) => {
+      try {
+        const payload: GoogleAuthUser = await this.jwtService.decode(token);
 
-      const user = await this.userService.findUser(payload.email, {
-        withPassword: true,
-      });
+        const user = await prisma.user.findUnique({
+          where: { email: payload.email },
+        });
 
-      const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
-      const default_img = process.env.DEFAULT_PROFILE_IMG;
+        const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
+        const default_img = process.env.DEFAULT_PROFILE_IMG;
 
-      if (client_id !== payload.aud) {
-        throw new UnauthorizedException();
+        if (client_id !== payload.aud) {
+          throw new UnauthorizedException();
+        }
+
+        if (!user) {
+          throw new UnauthorizedException();
+        }
+        const { password, ...rest } = user;
+
+        if (user.img === default_img) {
+          const { url, file } = this.createImgPath();
+          await this.downloadImage(payload.picture, file);
+          await prisma.user.update({
+            where: { id: user.id },
+            data: { img: url },
+          });
+        }
+        return {
+          ...rest,
+          ...(await this.generateTokens(user)),
+        };
+      } catch (error) {
+        console.error('Error in signInGoogle:', error); // Important: Log the error
+        throw error;
       }
-
-      if (!user) {
-        throw new UnauthorizedException();
-      }
-      const { password, ...rest } = user;
-
-      if (user.img === default_img) {
-        return await this.updateUserProfile(user, payload, default_img);
-      }
-      return {
-        ...rest,
-        ...(await this.generateTokens(user)),
-      };
-    } catch (error) {
-      console.error('Error in signInGoogle:', error); // Important: Log the error
-      throw error;
-    }
+    });
   }
 
   async signUpGoogle(token: string): Promise<Partial<AuthUser>> {
@@ -308,7 +310,7 @@ export class AuthService {
     user: User,
   ): Promise<{ access_token: string; refresh_token: string }> {
     const access_token = await this.signToken(user);
-    const refresh_token = await this.generaterefresh_token(user);
+    const refresh_token = await this.generaterefreshToken(user);
 
     await this.saveToken(user.id, access_token, false);
     await this.saveToken(user.id, refresh_token, true);
@@ -316,8 +318,8 @@ export class AuthService {
     return { access_token, refresh_token };
   }
 
-  private async hashToken(token: string) {
-    return await bcrypt.hash(token, 1);
+  private async hashToken(token: string): Promise<string> {
+    return crypto.createHash('sha256').update(token).digest('hex');
   }
 
   async signToken(user: User): Promise<string> {
@@ -331,7 +333,7 @@ export class AuthService {
     });
   }
 
-  private async generaterefresh_token(user: User): Promise<string> {
+  private async generaterefreshToken(user: User): Promise<string> {
     const payload = {
       sub: user.email,
       user_id: user.id,
@@ -354,11 +356,11 @@ export class AuthService {
 
     await this.prisma.authToken.upsert({
       where: { user_id_is_refresh_token: { user_id, is_refresh_token } },
-      update: { token, expires_at },
+      update: { token, token_hash, expires_at },
       create: {
         user_id,
         token,
-        token_hash,
+        token_hash: token_hash,
         is_refresh_token,
         expires_at,
       },
