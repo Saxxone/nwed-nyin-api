@@ -18,12 +18,12 @@ import { Article } from '@prisma/client';
 export class ArticleController {
   constructor(private readonly articleService: ArticleService) {}
 
-  @Post()
+  @Post('publish')
   create(@Body() createArticleDto: CreateArticleDto): Promise<Article> {
     return this.articleService.create(createArticleDto);
   }
 
-  @Get()
+  @Get('slug')
   findAll(): Promise<Article[]> {
     return this.articleService.findAll();
   }

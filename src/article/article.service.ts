@@ -20,6 +20,8 @@ export class ArticleService {
       ...articleData
     } = createArticleDto;
 
+    console.log(createArticleDto);
+
     return this.prisma.article.create({
       data: {
         ...articleData,
