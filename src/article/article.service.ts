@@ -85,7 +85,6 @@ export class ArticleService {
         if (!user) throw new UnauthorizedException('Login or create account');
 
         const slug = await this.slugify(article_data.title);
-        const first_paragraph = content.split('\n\n')[0];
 
         const markdown = content;
         const sections = this.extractSectionsFromMarkdown(markdown);
