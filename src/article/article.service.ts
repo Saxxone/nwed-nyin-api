@@ -3,13 +3,17 @@ import {
   UnauthorizedException,
   NotFoundException,
   NotImplementedException,
+  StreamableFile,
 } from '@nestjs/common';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
 import { Article, Status } from '@prisma/client';
-import { promises as fs } from 'fs';
+import { createReadStream, existsSync, promises as fs } from 'fs';
+import { dirname, join } from 'path';
+
+const BASE_PATH = '../../..';
 
 @Injectable()
 export class ArticleService {
@@ -43,18 +47,17 @@ export class ArticleService {
     const sections = [];
 
     while ((match = heading_regex.exec(markdown)) !== null) {
-      // Push existing section content
       if (current_section) {
         sections.push({
           title: sections[sections.length - 1]?.title,
-          content: current_section.trim(),
+          content: current_section.substring(0, 50),
         });
       }
 
       sections.push({ title: match[1], content: '' });
       current_section = '';
 
-      const next_heading_index = heading_regex.lastIndex; // start of next section
+      const next_heading_index = heading_regex.lastIndex;
       const next_match = heading_regex.exec(markdown);
       const end_of_current_section = next_match
         ? next_match.index
@@ -65,9 +68,11 @@ export class ArticleService {
       );
     }
 
+    console.log(current_section.substring(0, 50));
+
     sections.push({
       title: sections[sections.length - 1]?.title,
-      content: current_section.trim(),
+      content: current_section.substring(0, 50),
     });
     return sections.slice(1);
   }
@@ -86,9 +91,27 @@ export class ArticleService {
 
         const slug = await this.slugify(article_data.title);
 
-        const markdown = content;
-        const sections = this.extractSectionsFromMarkdown(markdown);
-        const file_path = `articles/${slug}.md`;
+        const sections = this.extractSectionsFromMarkdown(content);
+
+        const file_path = join(
+          __dirname,
+          BASE_PATH,
+          'public',
+          'articles',
+          `${slug}.md`,
+        );
+        const dir = dirname(file_path);
+
+        try {
+          await fs.access(dir);
+        } catch (error) {
+          if (error.code === 'ENOENT') {
+            await fs.mkdir(dir, { recursive: true });
+          } else {
+            throw error;
+          }
+        }
+
         await fs.writeFile(file_path, content);
 
         return prisma.article.create({
@@ -97,7 +120,7 @@ export class ArticleService {
             slug: slug,
             status: Status.PUBLISHED,
             body: file_path,
-            summary: article_data.title,
+            summary: content.substring(0, 50),
             media: {
               create: media,
             },
@@ -131,9 +154,9 @@ export class ArticleService {
     });
   }
 
-  async findOne(id: string): Promise<Article> {
+  async findOne(slug: string): Promise<Article> {
     const article = await this.prisma.article.findUnique({
-      where: { id },
+      where: { slug },
       include: {
         categories: true,
         tags: true,
@@ -145,9 +168,31 @@ export class ArticleService {
       },
     });
     if (!article) {
-      throw new NotFoundException(`Article with ID ${id} not found`);
+      throw new NotFoundException(`Article with slug ${slug} not found`);
     }
     return article;
+  }
+
+  async getMarkdown(path: string): Promise<StreamableFile> {
+    try {
+      const file_path = join(
+        __dirname,
+        BASE_PATH,
+        'public',
+        'articles',
+        `${path}.md`,
+      );
+
+      const file = createReadStream(
+        join(__dirname, BASE_PATH, 'public', 'articles', `${path}.md`),
+      );
+      if (!existsSync(file_path)) {
+        throw new NotFoundException('Markdown file not found');
+      }
+      return new StreamableFile(file);
+    } catch (error) {
+      throw new NotFoundException('Markdown file not found' + error);
+    }
   }
 
   async update(

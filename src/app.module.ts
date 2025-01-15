@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AppService } from './app.service';
 import { ArticleModule } from './article/article.module';
@@ -12,11 +13,16 @@ import { LoggingInterceptor } from './app.interceptor';
 import { MulterModule } from '@nestjs/platform-express';
 import { PrismaService } from './prisma/prisma.service';
 import { FileModule } from './file/file.module';
+import { join } from 'path';
 
 @Module({
   imports: [
     MulterModule.register({
       dest: '../articles',
+    }),
+    ServeStaticModule.forRoot({
+      rootPath: join(__dirname, '..', 'public'),
+      serveRoot: '/articles/',
     }),
     ThrottlerModule.forRoot([
       {

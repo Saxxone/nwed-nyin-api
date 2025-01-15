@@ -15,6 +15,8 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { JwtPayload } from './auth.guard';
 import { Request } from 'express';
 
+const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -274,7 +276,9 @@ export class AuthService {
             email: refresh_token_payload.sub,
           } as User);
 
-          const access_token_expires_at = new Date(Date.now() + 15 * 60 * 1000);
+          const access_token_expires_at = new Date(
+            Date.now() + 30 * MILLISECONDS_PER_DAY,
+          );
           await this.prisma.authToken.upsert({
             where: {
               user_id_is_refresh_token: {
@@ -329,7 +333,7 @@ export class AuthService {
     };
     return this.jwtService.signAsync(payload, {
       secret: jwtConstants.secret,
-      expiresIn: '15m',
+      expiresIn: '7d',
     });
   }
 
@@ -349,9 +353,7 @@ export class AuthService {
     token: string,
     is_refresh_token: boolean,
   ): Promise<void> {
-    const expires_at = new Date(
-      Date.now() + (is_refresh_token ? 7 : 15) * 60 * 1000,
-    );
+    const expires_at = new Date(Date.now() + 30 * MILLISECONDS_PER_DAY);
     const token_hash = await this.hashToken(token);
 
     await this.prisma.authToken.upsert({

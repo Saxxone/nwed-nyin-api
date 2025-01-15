@@ -6,10 +6,13 @@ import {
   Patch,
   Param,
   Delete,
+  Res,
   Request,
   ParseUUIDPipe,
   NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ArticleService } from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
@@ -29,15 +32,28 @@ export class ArticleController {
   }
 
   @Public()
-  @Get('slug')
+  @Get()
   findAll(): Promise<Article[]> {
     return this.articleService.findAll();
   }
 
   @Public()
-  @Get(':id')
-  findOne(@Param('id', new ParseUUIDPipe()) id: string): Promise<Article> {
-    return this.articleService.findOne(id);
+  @Get(':slug')
+  findOne(@Param('slug') slug: string): Promise<Article> {
+    return this.articleService.findOne(slug);
+  }
+
+  @Public()
+  @Get('markdown/:path')
+  getArticleContent(
+    @Param('path') path: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    res.set({
+      'Content-Type': 'text/markdown',
+      'Content-Disposition': `inline; filename="${path}.md"`,
+    });
+    return this.articleService.getMarkdown(path);
   }
 
   @Patch(':id')
