@@ -3,7 +3,7 @@ import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
 
 async function bootstrap() {
-  const ui_base_url = process.env.UI_BASE_URL || 'https://nwednyin.org';
+  const ui_base_url = process.env.UI_BASE_URL || 'https://www.nwednyin.org';
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin: ui_base_url,
