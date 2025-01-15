@@ -6,7 +6,7 @@ import { JwtService } from '@nestjs/jwt';
 import { jwtConstants } from './constants';
 import { GoogleAuthUser, AuthUser } from './dto/sign-in.dto';
 import { User } from '@prisma/client';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import * as https from 'https';
 import { join } from 'path';
 import * as fs from 'fs';
@@ -370,7 +370,7 @@ export class AuthService {
   }
 
   private createImgPath() {
-    const img_name = uuidv4() + '.jpg';
+    const img_name = randomUUID() + '.jpg';
     const destination = join(__dirname, '../../../../', 'media');
     const media_base_url = process.env.FILE_BASE_URL;
     fs.mkdirSync(destination, { recursive: true });
