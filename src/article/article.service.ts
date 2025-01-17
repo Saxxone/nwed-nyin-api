@@ -68,8 +68,6 @@ export class ArticleService {
       );
     }
 
-    console.log(current_section.substring(0, 50));
-
     sections.push({
       title: sections[sections.length - 1]?.title,
       content: current_section.substring(0, 50),
@@ -140,8 +138,16 @@ export class ArticleService {
     });
   }
 
-  findAll(): Promise<Article[]> {
+  findAll({ skip, take }: { skip: number; take: number }): Promise<Article[]> {
     return this.prisma.article.findMany({
+      where: {
+        status: Status.PUBLISHED,
+      },
+      skip,
+      take,
+      orderBy: {
+        created_at: 'desc',
+      },
       include: {
         categories: true,
         tags: true,

@@ -6,6 +6,7 @@ import {
   Patch,
   Param,
   Delete,
+  Query,
   Res,
   Request,
   ParseUUIDPipe,
@@ -33,8 +34,14 @@ export class ArticleController {
 
   @Public()
   @Get()
-  findAll(): Promise<Article[]> {
-    return this.articleService.findAll();
+  findAll(
+    @Query('skip') skip?: number,
+    @Query('take') take?: number,
+  ): Promise<Article[]> {
+    return this.articleService.findAll({
+      skip: Number(skip) || 0,
+      take: Number(take) || 10,
+    });
   }
 
   @Public()

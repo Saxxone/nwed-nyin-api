@@ -28,8 +28,11 @@ export class DictionaryController {
 
   @Public()
   @Get()
-  findAll() {
-    return this.dictionaryService.findAll();
+  findAll(@Query('skip') skip?: number, @Query('take') take?: number) {
+    return this.dictionaryService.findAll({
+      skip: Number(skip) || 0,
+      take: Number(take) || 10,
+    });
   }
 
   @Get('parts-of-speech')
