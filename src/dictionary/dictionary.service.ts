@@ -7,17 +7,28 @@ import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma, Word } from '@prisma/client';
+import { UserService } from '../user/user.service';
 
 @Injectable()
 export class DictionaryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly userService: UserService,
+  ) {}
 
-  async create(createDictionaryDto: CreateDictionaryDto): Promise<Word> {
+  async create(
+    createDictionaryDto: CreateDictionaryDto,
+    email: string,
+  ): Promise<Word> {
     try {
       const { definitions, ...wordData } = createDictionaryDto;
+      const user = await this.userService.findUser(email);
       return await this.prisma.word.create({
         data: {
           ...wordData,
+          contributors: {
+            connect: user,
+          },
           definitions: {
             create: definitions.map((definition) => {
               return {
@@ -80,7 +91,7 @@ export class DictionaryService {
     return { words, totalCount };
   }
 
-  async findAllPS() {
+  async findAllPartsOfSpeech() {
     return this.prisma.partOfSpeech.findMany();
   }
 
@@ -133,13 +144,20 @@ export class DictionaryService {
   async update(
     id: string,
     updateDictionaryDto: UpdateDictionaryDto,
+    email: string,
   ): Promise<Word> {
     const { definitions, ...wordData } = updateDictionaryDto;
     try {
+      const user = await this.userService.findUser(email);
       return await this.prisma.$transaction(async (prisma) => {
         const updated_word = await prisma.word.update({
           where: { id },
-          data: wordData,
+          data: {
+            ...wordData,
+            contributors: {
+              connect: user,
+            },
+          },
         });
 
         if (definitions && definitions.length > 0) {

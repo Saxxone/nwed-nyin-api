@@ -8,6 +8,7 @@ import {
   Delete,
   NotFoundException,
   Query,
+  Request,
 } from '@nestjs/common';
 import { DictionaryService } from './dictionary.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
@@ -22,8 +23,9 @@ export class DictionaryController {
   @Post('add')
   async create(
     @Body() createDictionaryDto: CreateDictionaryDto,
+    @Request() req: any,
   ): Promise<Word> {
-    return this.dictionaryService.create(createDictionaryDto);
+    return this.dictionaryService.create(createDictionaryDto, req.user.sub);
   }
 
   @Public()
@@ -37,7 +39,7 @@ export class DictionaryController {
 
   @Get('parts-of-speech')
   findAllPS() {
-    return this.dictionaryService.findAllPS();
+    return this.dictionaryService.findAllPartsOfSpeech();
   }
 
   @Public()
