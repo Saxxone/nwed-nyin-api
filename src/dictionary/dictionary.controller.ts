@@ -62,9 +62,14 @@ export class DictionaryController {
   async update(
     @Param('id') id: string,
     @Body() updateDictionaryDto: UpdateDictionaryDto,
+    @Request() req: any,
   ): Promise<Word> {
     try {
-      return await this.dictionaryService.update(id, updateDictionaryDto);
+      return await this.dictionaryService.update(
+        id,
+        updateDictionaryDto,
+        req.user.sub,
+      );
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
