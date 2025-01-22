@@ -38,6 +38,12 @@ export class UpdateDictionaryDto extends PartialType(CreateDictionaryDto) {
   definitions?: DefinitionDto[];
 }
 
+export class UpdateDictionarySoundDto extends PartialType(CreateDictionaryDto) {
+  @IsOptional()
+  @IsString()
+  sound?: string;
+}
+
 export class DefinitionDto {
   @IsOptional()
   @IsString()

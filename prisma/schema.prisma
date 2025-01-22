@@ -90,6 +90,7 @@ model User {
   contributed_words Word[]           @relation("word_contributors")
   files             File[]           @relation("UserToFiles")
   auth_token        AuthToken[]      @relation("UserToAuthTokens")
+  SoundMetadata     SoundMetadata[]
 
   @@index([email])
   @@index([role])
@@ -188,18 +189,38 @@ enum Status {
 
 //Dictionary
 model Word {
-  id            String         @id @unique @default(cuid())
-  term          String
-  pronunciation String?
-  etymology     String?        @db.VarChar(255)
-  alt_spelling  String?        @db.VarChar(255)
-  definitions   Definition[]
-  created_at    DateTime       @default(now())
-  updated_at    DateTime       @updatedAt
-  deleted_at    DateTime?      @default(now())
-  contributors  User[]         @relation("word_contributors")
-  related_from  WordRelation[] @relation("from")
-  related_to    WordRelation[] @relation("to")
+  id                String         @id @unique @default(cuid())
+  term              String
+  pronunciation     String?
+  etymology         String?        @db.VarChar(255)
+  alt_spelling      String?        @db.VarChar(255)
+  definitions       Definition[]
+  created_at        DateTime       @default(now())
+  updated_at        DateTime       @updatedAt
+  deleted_at        DateTime?      @default(now())
+  contributors      User[]         @relation("word_contributors")
+  related_from      WordRelation[] @relation("from")
+  related_to        WordRelation[] @relation("to")
+  sound_metadata    SoundMetadata?
+  sound_metadata_id String?        @unique
+
+  @@index([sound_metadata_id])
+}
+
+model SoundMetadata {
+  id             String   @id @unique @default(cuid())
+  url            String   @db.VarChar(1024)
+  format         String?  @db.VarChar(50)
+  duration       Int?
+  bitrate        Int?
+  size           Int?
+  status         Status   @default(PENDING)
+  contributor_id String
+  contributor    User?    @relation(fields: [contributor_id], references: [id])
+  created_at     DateTime @default(now())
+  updated_at     DateTime @updatedAt
+  word_id        String?  @unique
+  word           Word?    @relation(fields: [word_id], references: [id])
 }
 
 model WordRelation {
@@ -301,7 +322,3 @@ model AuthToken {
 
   @@unique([user_id, is_refresh_token])
 }
-
-
-
-

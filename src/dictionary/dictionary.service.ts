@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
-import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
+import { UpdateDictionaryDto, UpdateDictionarySoundDto } from './dto/update-dictionary.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma, Word } from '@prisma/client';
 import { UserService } from '../user/user.service';
@@ -230,6 +230,30 @@ export class DictionaryService {
         }
       }
       throw new BadRequestException('Failed to update word.');
+    }
+  }
+
+  async updateSound(
+    id: string,
+    updateSoundDto: UpdateDictionarySoundDto,
+    email: string,
+  ): Promise<Word> {
+    try {
+      const user = await this.userService.findUser(email);
+      return await this.prisma.word.update({
+        where: { id },
+        data: {
+          sound: updateSoundDto.sound,
+          contributor: {
+            connect: user,
+          },
+        },
+      });
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw error;
     }
   }
 
