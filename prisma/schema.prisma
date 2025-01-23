@@ -73,24 +73,24 @@ model ArticleMetadata {
 }
 
 model User {
-  id                String                   @id @default(cuid())
-  name              String
-  articles          Article[]                @relation("article_contributors")
-  email             String                   @unique
-  password          String?
-  img               String
-  role              Role
-  active            Boolean                  @default(true)
-  last_login        DateTime?
-  preferences       UserPreference[]
-  verified_at       DateTime?
-  two_factor_auth   Boolean                  @default(false)
-  created_at        DateTime                 @default(now())
-  updated_at        DateTime                 @updatedAt
-  contributed_words Word[]                   @relation("word_contributors")
-  files             File[]                   @relation("UserToFiles")
-  auth_token        AuthToken[]              @relation("UserToAuthTokens")
-  contributed_pro   WordPronunciationAudio[]
+  id                        String                   @id @default(cuid())
+  name                      String
+  articles                  Article[]                @relation("article_contributors")
+  email                     String                   @unique
+  password                  String?
+  img                       String
+  role                      Role
+  active                    Boolean                  @default(true)
+  last_login                DateTime?
+  preferences               UserPreference[]
+  verified_at               DateTime?
+  two_factor_auth           Boolean                  @default(false)
+  created_at                DateTime                 @default(now())
+  updated_at                DateTime                 @updatedAt
+  contributed_words         Word[]                   @relation("word_contributors")
+  files                     File[]                   @relation("UserToFiles")
+  auth_token                AuthToken[]              @relation("UserToAuthTokens")
+  word_pronunciation_audios WordPronunciationAudio[]
 
   @@index([email])
   @@index([role])
@@ -152,18 +152,18 @@ enum ReferenceType {
 }
 
 model Media {
-  id                     String                   @id @default(cuid())
-  type                   MediaType
-  url                    String
-  caption                String?
-  credit                 String?
-  alt_text               String?
-  mime_type              String?
-  size                   Int?
-  width                  Int?
-  height                 Int?
-  article                Article                  @relation(fields: [article_id], references: [id])
-  article_id             String
+  id                       String                   @id @default(cuid())
+  type                     MediaType
+  url                      String
+  caption                  String?
+  credit                   String?
+  alt_text                 String?
+  mime_type                String?
+  size                     Int?
+  width                    Int?
+  height                   Int?
+  article                  Article                  @relation(fields: [article_id], references: [id])
+  article_id               String
   word_pronunciation_audio WordPronunciationAudio[]
 }
 
@@ -188,32 +188,30 @@ enum Status {
 
 //Dictionary
 model Word {
-  id                     String                   @id @default(cuid())
-  term                   String
-  pronunciation          String?
-  etymology              String?                  @db.VarChar(255)
-  alt_spelling           String?                  @db.VarChar(255)
-  definitions            Definition[]
-  created_at             DateTime                 @default(now())
-  updated_at             DateTime                 @updatedAt
-  deleted_at             DateTime?
-  contributors           User[]                   @relation("word_contributors")
-  related_from           WordRelation[]           @relation("from")
-  related_to             WordRelation[]           @relation("to")
-  language               Language                 @relation(fields: [language_id], references: [id])
-  language_id            String
-  dialect                String?
-  accent                 String?
-  pronunciation_audio    WordPronunciationAudio[] @relation(name: "word_sound")
+  id                   String                   @id @default(cuid())
+  term                 String
+  pronunciation        String?
+  etymology            String?                  @db.VarChar(255)
+  alt_spelling         String?                  @db.VarChar(255)
+  definitions          Definition[]
+  created_at           DateTime                 @default(now())
+  updated_at           DateTime                 @updatedAt
+  deleted_at           DateTime?
+  contributors         User[]                   @relation("word_contributors")
+  related_from         WordRelation[]           @relation("from")
+  related_to           WordRelation[]           @relation("to")
+  language             Language                 @relation(fields: [language_id], references: [id])
+  language_id          String
+  dialect              String?
+  accent               String?
+  pronunciation_audios WordPronunciationAudio[] @relation(name: "word_pronunciation_audios")
 }
 
 model WordPronunciationAudio {
   id             String    @id @default(cuid())
-  url            String    @db.VarChar(1024) // You might want to remove this if using Media.url
   format         String?   @db.VarChar(50)
   duration       Int?
   bitrate        Int?
-  size           Int?  // You might want to remove this if using Media.size
   language       Language? @relation(fields: [language_id], references: [id])
   language_id    String?
   status         Status    @default(PENDING)
@@ -221,22 +219,22 @@ model WordPronunciationAudio {
   contributor_id String?
   created_at     DateTime  @default(now())
   updated_at     DateTime  @updatedAt
-  word           Word      @relation(fields: [word_id], references: [id])
+  word           Word      @relation(name: "word_pronunciation_audios", fields: [word_id], references: [id])
   word_id        String
-  media          Media?    @relation(fields: [media_id], references: [id])
-  media_id       String?
+  media          Media     @relation(fields: [media_id], references: [id])
+  media_id       String // Made required earlier
 
-  @@unique([word_id, language_id]) // Optional: Ensures only one audio per word/language combination
+  @@unique([word_id]) // Ensure only one audio per word
 }
 
-
 model Language {
-  id          String       @id @default(cuid())
-  name        String       @unique
-  words       Word[]
-  dialects    Dialect[]
-  created_at  DateTime     @default(now())
-  updated_at  DateTime     @updatedAt
+  id                     String                   @id @default(cuid())
+  name                   String                   @unique
+  words                  Word[]
+  dialects               Dialect[]
+  created_at             DateTime                 @default(now())
+  updated_at             DateTime                 @updatedAt
+  word_pronunciation_audio WordPronunciationAudio[]
 }
 
 model Dialect {
