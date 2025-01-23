@@ -9,6 +9,7 @@ import {
   IsNotEmpty,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { IsBlob } from 'src/file/dto/is-blob.validator';
 
 export class UpdateDictionaryDto extends PartialType(CreateDictionaryDto) {
   @IsOptional()
@@ -39,9 +40,8 @@ export class UpdateDictionaryDto extends PartialType(CreateDictionaryDto) {
 }
 
 export class UpdateDictionarySoundDto extends PartialType(CreateDictionaryDto) {
-  @IsOptional()
-  @IsString()
-  sound?: string;
+  @IsBlob()
+  sound: string;
 }
 
 export class DefinitionDto {

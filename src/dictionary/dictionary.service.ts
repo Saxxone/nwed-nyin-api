@@ -3,17 +3,23 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { CreateDictionaryDto } from './dto/create-dictionary.dto';
-import { UpdateDictionaryDto, UpdateDictionarySoundDto } from './dto/update-dictionary.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
 import { Prisma, Word } from '@prisma/client';
+import { compressFiles } from '@src/file/file.manager';
+import { FileService } from 'src/file/file.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from '../user/user.service';
+import { CreateDictionaryDto } from './dto/create-dictionary.dto';
+import {
+  UpdateDictionaryDto,
+  UpdateDictionarySoundDto,
+} from './dto/update-dictionary.dto';
 
 @Injectable()
 export class DictionaryService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
+    private readonly fileService: FileService,
   ) {}
 
   async create(
@@ -119,6 +125,12 @@ export class DictionaryService {
     return word;
   }
 
+  /**
+   * Searches for words matching a given term.
+   * @param term - The search term.
+   * @returns An array of words matching the search term.  Returns a maximum of 5 words.
+   * @throws NotFoundException if no words are found.
+   */
   async search(term: string): Promise<Word[]> {
     return this.prisma.word.findMany({
       where: {
@@ -233,27 +245,82 @@ export class DictionaryService {
     }
   }
 
-  async updateSound(
+  /**
+   * Updates the pronunciation audio for a word.
+   * @param id - The ID of the word.
+   * @param updateSoundDto - The DTO containing the updated sound data.
+   * @param email - The email of the user making the update.
+   * @returns The updated word.
+   * @throws NotFoundException if the word is not found.
+   * @throws BadRequestException if the update fails.
+   */
+  async updateWordPronunciation(
     id: string,
-    updateSoundDto: UpdateDictionarySoundDto,
+    sound_blob: UpdateDictionarySoundDto,
     email: string,
   ): Promise<Word> {
     try {
       const user = await this.userService.findUser(email);
-      return await this.prisma.word.update({
+
+      const compressed_sound = await compressFiles(sound_blob);
+      const saved_sound = await this.fileService.create(
+        compressed_sound,
+        email,
+      );
+
+      const word = await this.prisma.word.findUnique({ where: { id } });
+
+      if (!word) {
+        throw new NotFoundException(`Word with ID ${id} not found.`);
+      }
+
+      // Assuming updateSoundDto contains properties like format, bitrate, duration, etc., and mediaId
+      // Update the WordPronunciationAudio record associated with the word
+      const updatedWord = await this.prisma.word.update({
         where: { id },
         data: {
-          sound: updateSoundDto.sound,
-          contributor: {
-            connect: user,
+          pronunciation_audios: {
+            upsert: {
+              where: { word_id: id },
+              create: {
+                format: updateSoundDto.format,
+                bitrate: updateSoundDto.bitrate,
+                duration: updateSoundDto.duration,
+                // ... other WordPronunciationAudio fields
+                contributor: { connect: { id: user.id } },
+                media: { connect: { id: updateSoundDto.mediaId } },
+              },
+              update: {
+                // Updates the existing WordPronunciationAudio
+                format: updateSoundDto.format,
+                bitrate: updateSoundDto.bitrate,
+                duration: updateSoundDto.duration,
+                // ... other WordPronunciationAudio fields
+                contributor: { connect: { id: user.id } },
+                media: { connect: { id: updateSoundDto.mediaId } },
+              },
+            },
+          },
+          updated_at: new Date(),
+        },
+        include: {
+          // Include updated pronunciation_audios to return complete data
+          pronunciation_audios: {
+            include: {
+              media: true,
+              contributor: true,
+            },
           },
         },
       });
+
+      return updatedWord;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      throw error;
+      console.error('Error updating word pronunciation:', error);
+      throw new BadRequestException('Failed to update word pronunciation.');
     }
   }
 

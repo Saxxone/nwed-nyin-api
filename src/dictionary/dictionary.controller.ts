@@ -68,7 +68,7 @@ export class DictionaryController {
     @Request() req: any,
   ): Promise<Word> {
     try {
-      return await this.dictionaryService.updateSound(
+      return await this.dictionaryService.updateWordPronunciation(
         id,
         updateSoundDto,
         req.user.sub,

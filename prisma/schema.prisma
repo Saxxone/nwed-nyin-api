@@ -30,7 +30,7 @@ model Article {
   references   Reference[]
   related_from Article[]        @relation("related_articles")
   related_to   Article[]        @relation("related_articles")
-  media        Media[]
+  file         File[]
   status       Status           @default(DRAFT)
   metadata     ArticleMetadata?
   versions     ArticleVersion[]
@@ -151,23 +151,7 @@ enum ReferenceType {
   OTHER
 }
 
-model Media {
-  id                       String                   @id @default(cuid())
-  type                     MediaType
-  url                      String
-  caption                  String?
-  credit                   String?
-  alt_text                 String?
-  mime_type                String?
-  size                     Int?
-  width                    Int?
-  height                   Int?
-  article                  Article                  @relation(fields: [article_id], references: [id])
-  article_id               String
-  word_pronunciation_audio WordPronunciationAudio[]
-}
-
-enum MediaType {
+enum FileType {
   IMAGE
   VIDEO
   AUDIO
@@ -221,8 +205,8 @@ model WordPronunciationAudio {
   updated_at     DateTime  @updatedAt
   word           Word      @relation(name: "word_pronunciation_audios", fields: [word_id], references: [id])
   word_id        String
-  media          Media     @relation(fields: [media_id], references: [id])
-  media_id       String 
+  file           File      @relation(fields: [file_id], references: [id])
+  file_id        String
 
   @@unique([word_id])
 }
@@ -318,20 +302,26 @@ model Antonym {
 }
 
 model File {
-  id           String    @id @default(uuid())
+  id           String   @id @default(uuid())
   originalname String
   filename     String
   size         Int
-  type         String
+  type         FileType
   url          String
   path         String
   mimetype     String
-  status       Status    @default(PENDING)
-  owner        User      @relation("UserToFiles", fields: [owner_id], references: [id])
-  owner_id     String
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
-  deleted_at   DateTime?
+  caption  String?
+  credit   String?
+  alt_text String?
+  status                   Status                   @default(PENDING)
+  owner                    User                     @relation("UserToFiles", fields: [owner_id], references: [id])
+  owner_id                 String
+  article                  Article                  @relation(fields: [article_id], references: [id])
+  article_id               String
+  word_pronunciation_audio WordPronunciationAudio[]
+  created_at               DateTime                 @default(now())
+  updated_at               DateTime                 @updatedAt
+  deleted_at               DateTime?
 }
 
 model AuthToken {
