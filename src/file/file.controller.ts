@@ -1,22 +1,23 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  UseInterceptors,
-  Request,
   BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Request,
+  UseInterceptors,
 } from '@nestjs/common';
-import { FileService } from './file.service';
-import { UpdateFileDto } from './dto/update-file.dto';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
+import * as fs from 'fs';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
-import * as fs from 'fs';
+import { DictionaryService } from 'src/dictionary/dictionary.service';
+import { UpdateFileDto } from './dto/update-file.dto';
 import { compressFiles } from './file.manager';
+import { FileService } from './file.service';
 
 const destination = join(__dirname, '../../../../', 'media');
 
@@ -47,7 +48,10 @@ const storage = diskStorage({
 
 @Controller('file')
 export class FileController {
-  constructor(private readonly fileService: FileService) {}
+  constructor(
+    private readonly fileService: FileService,
+    private readonly dictionaryService: DictionaryService,
+  ) {}
 
   @UseInterceptors(
     AnyFilesInterceptor({
@@ -84,7 +88,47 @@ export class FileController {
 
     compressed_fiiles = await compressFiles(files);
 
-    return await this.fileService.create(compressed_fiiles, req.user.sub);
+    return await this.fileService.create(compressed_fiiles, req.user.sub, {});
+  }
+
+  @UseInterceptors(
+    AnyFilesInterceptor({
+      storage: storage,
+      limits: {
+        fileSize: 1024 * 1024 * 20, // 20MB
+        files: 4,
+      },
+      fileFilter: (req, file, cb) => {
+        if (!allowedMimeTypes.has(file.mimetype)) {
+          return cb(
+            new BadRequestException(
+              `Unsupported file type. Allowed types are: ${Array.from(
+                allowedMimeTypes,
+              ).join(', ')}`,
+            ),
+            false,
+          );
+        }
+        cb(null, true);
+      },
+    }),
+  )
+  @Post('upload-sound/:id')
+  async uploadSound(@Request() req: any, @Param('id') id: string) {
+    let files: Array<Express.Multer.File> = [];
+
+    if (req.files) {
+      files = req.files;
+    }
+
+    if (files.length === 0) throw new BadRequestException('No files found.');
+
+    const compressed_files = await compressFiles(files);
+    return await this.dictionaryService.updateWordPronunciation(
+      id,
+      compressed_files,
+      req.user.sub,
+    );
   }
 
   @Get()

@@ -4,15 +4,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, Word } from '@prisma/client';
-import { compressFiles } from '@src/file/file.manager';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
-import {
-  UpdateDictionaryDto,
-  UpdateDictionarySoundDto,
-} from './dto/update-dictionary.dto';
+import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 
 @Injectable()
 export class DictionaryService {
@@ -120,6 +116,30 @@ export class DictionaryService {
 
     if (!word) {
       throw new NotFoundException(`Word with term "${term}" not found`);
+    }
+
+    return word;
+  }
+
+  async finbById(id: string): Promise<Word | null> {
+    const word = await this.prisma.word.findUniqueOrThrow({
+      where: {
+        id: id,
+      },
+      include: {
+        definitions: {
+          include: {
+            part_of_speech: true,
+            examples: true,
+            synonyms: true,
+            antonyms: true,
+          },
+        },
+      },
+    });
+
+    if (!word) {
+      throw new NotFoundException(`Word with id "${id}" not found`);
     }
 
     return word;
@@ -256,16 +276,16 @@ export class DictionaryService {
    */
   async updateWordPronunciation(
     id: string,
-    sound_blob: UpdateDictionarySoundDto,
+    compressed_sound: Express.Multer.File[],
     email: string,
   ): Promise<Word> {
     try {
       const user = await this.userService.findUser(email);
 
-      const compressed_sound = await compressFiles(sound_blob);
-      const saved_sound = await this.fileService.create(
+      const saved_sound_ids = await this.fileService.create(
         compressed_sound,
         email,
+        {},
       );
 
       const word = await this.prisma.word.findUnique({ where: { id } });
@@ -274,47 +294,29 @@ export class DictionaryService {
         throw new NotFoundException(`Word with ID ${id} not found.`);
       }
 
-      // Assuming updateSoundDto contains properties like format, bitrate, duration, etc., and mediaId
-      // Update the WordPronunciationAudio record associated with the word
-      const updatedWord = await this.prisma.word.update({
+      const updated_word = await this.prisma.word.update({
         where: { id },
         data: {
           pronunciation_audios: {
             upsert: {
               where: { word_id: id },
               create: {
-                format: updateSoundDto.format,
-                bitrate: updateSoundDto.bitrate,
-                duration: updateSoundDto.duration,
-                // ... other WordPronunciationAudio fields
+                format: compressed_sound[0].mimetype,
                 contributor: { connect: { id: user.id } },
-                media: { connect: { id: updateSoundDto.mediaId } },
+                file: { connect: { id: saved_sound_ids[0] } },
               },
               update: {
-                // Updates the existing WordPronunciationAudio
-                format: updateSoundDto.format,
-                bitrate: updateSoundDto.bitrate,
-                duration: updateSoundDto.duration,
-                // ... other WordPronunciationAudio fields
+                format: compressed_sound[0].mimetype,
                 contributor: { connect: { id: user.id } },
-                media: { connect: { id: updateSoundDto.mediaId } },
+                file: { connect: { id: saved_sound_ids[0] } },
               },
             },
           },
           updated_at: new Date(),
         },
-        include: {
-          // Include updated pronunciation_audios to return complete data
-          pronunciation_audios: {
-            include: {
-              media: true,
-              contributor: true,
-            },
-          },
-        },
       });
 
-      return updatedWord;
+      return updated_word;
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

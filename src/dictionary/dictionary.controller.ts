@@ -1,23 +1,20 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
   NotFoundException,
+  Param,
+  Patch,
+  Post,
   Query,
   Request,
 } from '@nestjs/common';
-import { DictionaryService } from './dictionary.service';
-import { CreateDictionaryDto } from './dto/create-dictionary.dto';
-import {
-  UpdateDictionaryDto,
-  UpdateDictionarySoundDto,
-} from './dto/update-dictionary.dto';
 import { Word } from '@prisma/client';
 import { Public } from 'src/auth/auth.guard';
+import { DictionaryService } from './dictionary.service';
+import { CreateDictionaryDto } from './dto/create-dictionary.dto';
+import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 
 @Controller('dictionary')
 export class DictionaryController {
@@ -59,26 +56,6 @@ export class DictionaryController {
   @Get(':term')
   findOne(@Param('term') term: string) {
     return this.dictionaryService.findOne(term);
-  }
-
-  @Patch('update-sound/:id')
-  async updateSound(
-    @Param('id') id: string,
-    @Body() updateSoundDto: UpdateDictionarySoundDto,
-    @Request() req: any,
-  ): Promise<Word> {
-    try {
-      return await this.dictionaryService.updateWordPronunciation(
-        id,
-        updateSoundDto,
-        req.user.sub,
-      );
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        throw error;
-      }
-      throw error;
-    }
   }
 
   @Patch('update/:id')

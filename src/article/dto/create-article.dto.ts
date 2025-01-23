@@ -1,4 +1,4 @@
-import { Article, MediaType, ReferenceType } from '@prisma/client';
+import { Article, FileType, ReferenceType } from '@prisma/client';
 import {
   IsEnum,
   IsNotEmpty,
@@ -47,7 +47,7 @@ export class CreateArticleDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => MediaDto)
-  media: MediaDto[] | null;
+  file: MediaDto[] | null;
 }
 
 // Separate DTO for References to make validation cleaner
@@ -89,8 +89,8 @@ export class ReferenceDto {
 }
 
 export class MediaDto {
-  @IsEnum(MediaType)
-  type: MediaType;
+  @IsEnum(FileType)
+  type: FileType;
 
   @IsUrl()
   url: string;

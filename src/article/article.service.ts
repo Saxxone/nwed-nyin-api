@@ -1,17 +1,19 @@
 import {
   Injectable,
-  UnauthorizedException,
   NotFoundException,
   NotImplementedException,
   StreamableFile,
+  UnauthorizedException,
 } from '@nestjs/common';
-import { CreateArticleDto } from './dto/create-article.dto';
-import { UpdateArticleDto } from './dto/update-article.dto';
-import { PrismaService } from 'src/prisma/prisma.service';
-import { UserService } from 'src/user/user.service';
-import { Article, Status } from '@prisma/client';
+import { Article, File, Status } from '@prisma/client';
 import { createReadStream, existsSync, promises as fs } from 'fs';
 import { dirname, join } from 'path';
+import { FileService } from 'src/file/file.service';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { UserService } from 'src/user/user.service';
+import { Readable } from 'stream';
+import { CreateArticleDto } from './dto/create-article.dto';
+import { UpdateArticleDto } from './dto/update-article.dto';
 
 const BASE_PATH = '../../..';
 
@@ -20,6 +22,7 @@ export class ArticleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
+    private readonly fileService: FileService,
   ) {}
 
   private async slugify(title: string): Promise<string> {
@@ -75,11 +78,71 @@ export class ArticleService {
     return sections.slice(1);
   }
 
+  private async writeMarkdownFile(
+    slug: string,
+    content: string,
+    email: string,
+  ): Promise<{
+    file: File;
+    file_path: string;
+  }> {
+    try {
+      const file_path = join(
+        __dirname,
+        BASE_PATH,
+        'public',
+        'articles',
+        `${slug}.md`,
+      );
+      const dir = dirname(file_path);
+
+      try {
+        await fs.access(dir);
+      } catch (error) {
+        if (error.code === 'ENOENT') {
+          await fs.mkdir(dir, { recursive: true });
+        } else {
+          throw error;
+        }
+      }
+
+      await fs.writeFile(file_path, content);
+
+      const markdown_file_ids = await this.fileService.create(
+        [
+          {
+            fieldname: slug,
+            originalname: slug,
+            buffer: Buffer.from(content),
+            mimetype: 'text/markdown',
+            encoding: 'utf-8',
+            size: content.length,
+            stream: new Readable(),
+            destination: file_path,
+            filename: slug,
+            path: file_path,
+          },
+        ],
+        email,
+        {
+          article_id: slug,
+        },
+      );
+      const markdown_file = await this.prisma.file.findUnique({
+        where: { id: markdown_file_ids[0] },
+      });
+
+      return { file: markdown_file, file_path };
+    } catch (error) {
+      throw new NotImplementedException(`error writing markdown file ${error}`);
+    }
+  }
+
   async create(
     create_article_dto: CreateArticleDto,
     email: string,
   ): Promise<Article> {
-    const { media, content, ...article_data } = create_article_dto;
+    const { content, ...article_data } = create_article_dto;
 
     return await this.prisma.$transaction(async (prisma) => {
       try {
@@ -91,36 +154,21 @@ export class ArticleService {
 
         const sections = this.extractSectionsFromMarkdown(content);
 
-        const file_path = join(
-          __dirname,
-          BASE_PATH,
-          'public',
-          'articles',
-          `${slug}.md`,
+        const { file, file_path } = await this.writeMarkdownFile(
+          slug,
+          content,
+          email,
         );
-        const dir = dirname(file_path);
 
-        try {
-          await fs.access(dir);
-        } catch (error) {
-          if (error.code === 'ENOENT') {
-            await fs.mkdir(dir, { recursive: true });
-          } else {
-            throw error;
-          }
-        }
-
-        await fs.writeFile(file_path, content);
-
-        return prisma.article.create({
+        const article = await prisma.article.create({
           data: {
             ...article_data,
             slug: slug,
             status: Status.PUBLISHED,
             body: file_path,
             summary: content.substring(0, 50),
-            media: {
-              create: media,
+            file: {
+              create: file,
             },
             sections: {
               create: sections,
@@ -132,6 +180,8 @@ export class ArticleService {
             updated_by: email,
           },
         });
+
+        return article;
       } catch (error) {
         throw new NotImplementedException(`error publishing post ${error}`);
       }
@@ -152,7 +202,7 @@ export class ArticleService {
         categories: true,
         tags: true,
         references: true,
-        media: true,
+        file: true,
         metadata: true,
         versions: true,
         contributors: true,
@@ -167,7 +217,7 @@ export class ArticleService {
         categories: true,
         tags: true,
         references: true,
-        media: true,
+        file: true,
         metadata: true,
         versions: true,
         contributors: true,
@@ -224,14 +274,22 @@ export class ArticleService {
 
     const new_slug = await this.slugify(article_data.title);
 
+    const { file, file_path } = await this.writeMarkdownFile(
+      slug,
+      article_data.content,
+      email,
+    );
+
     return this.prisma.article.update({
       where: { slug },
       data: {
         ...article_data,
         slug: new_slug,
         updated_by: email,
-        media: {
-          create: article_data.media,
+        body: file_path,
+        summary: markdown.substring(0, 50),
+        file: {
+          create: file,
         },
 
         sections: {
@@ -246,7 +304,7 @@ export class ArticleService {
         categories: true,
         tags: true,
         references: true,
-        media: true,
+        file: true,
         metadata: true,
         versions: true,
         contributors: true,

@@ -1,10 +1,10 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
-import { UserService } from 'src/user/user.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { Prisma, Status, File as FileModel } from '@prisma/client';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { File as FileModel, Prisma, Status } from '@prisma/client';
 import * as fs from 'fs/promises';
 import { join } from 'path';
+import { UserService } from 'src/user/user.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 
 @Injectable()
@@ -54,9 +54,12 @@ export class FileService {
   async create(
     files: Array<Express.Multer.File>,
     email: string,
+    entity: {
+      article_id?: string;
+    },
   ): Promise<string[]> {
     const user = await this.userService.findUser(email);
-    const savedFiles: string[] = [];
+    const saved_files: string[] = [];
     const media_base_url = process.env.FILE_BASE_URL;
 
     for (const file of files) {
@@ -69,16 +72,19 @@ export class FileService {
           mimetype: file.mimetype,
           size: file.size,
           status: Status.PENDING,
-          type: file.mimetype.split('/')[0],
+          type: file.mimetype.split('/')[0].toUpperCase(),
           owner: {
             connect: { id: user.id },
           },
+          article: entity?.article_id && {
+            connect: { id: entity.article_id },
+          },
         } as Prisma.FileCreateInput,
       });
-      savedFiles.push(savedFile.id);
+      saved_files.push(savedFile.id);
     }
 
-    return savedFiles;
+    return saved_files;
   }
 
   async getFilesUrls(

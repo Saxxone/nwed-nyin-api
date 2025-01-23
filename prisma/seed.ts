@@ -1,13 +1,13 @@
+import { faker } from '@faker-js/faker';
 import {
+  FileType,
   PrismaClient,
-  MediaType,
-  Role,
-  Status,
   ReferenceType,
   RelationType,
+  Role,
+  Status,
+  Word,
 } from '@prisma/client';
-import { faker } from '@faker-js/faker';
-import { Word } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -127,17 +127,21 @@ async function main() {
                   { min: 1, max: tags.length },
                 ),
               },
-              media: {
+              file: {
                 create: Array(1)
                   .fill(null)
                   .map(() => ({
-                    // Or adjust the number of media items as needed
-                    type: MediaType.IMAGE,
+                    // Or adjust the number of file items as needed
+                    type: FileType.IMAGE,
                     url: faker.image.url(),
                     caption: faker.lorem.sentence(),
                     credit: faker.person.fullName(),
                     alt_text: faker.lorem.sentence(),
-                    mime_type: 'image/jpeg',
+                    originalname: faker.system.fileName(),
+                    filename: faker.system.fileName(),
+                    path: faker.system.filePath(),
+                    mimetype: 'image/jpeg',
+                    owner: { connect: { id: editorUser.id } },
                     size: faker.number.int({ min: 50000, max: 5000000 }),
                     width: 1920, // Set width directly
                     height: 1080, // Set height directly

@@ -1,15 +1,14 @@
 import { PartialType } from '@nestjs/mapped-types';
-import { CreateDictionaryDto, PartOfSpeechDto } from './create-dictionary.dto';
+import { Type } from 'class-transformer';
 import {
+  IsArray,
+  IsNotEmpty,
   IsOptional,
   IsString,
   IsUUID,
-  IsArray,
   ValidateNested,
-  IsNotEmpty,
 } from 'class-validator';
-import { Type } from 'class-transformer';
-import { IsBlob } from 'src/file/dto/is-blob.validator';
+import { CreateDictionaryDto, PartOfSpeechDto } from './create-dictionary.dto';
 
 export class UpdateDictionaryDto extends PartialType(CreateDictionaryDto) {
   @IsOptional()
@@ -37,11 +36,6 @@ export class UpdateDictionaryDto extends PartialType(CreateDictionaryDto) {
   @ValidateNested({ each: true })
   @Type(() => DefinitionDto)
   definitions?: DefinitionDto[];
-}
-
-export class UpdateDictionarySoundDto extends PartialType(CreateDictionaryDto) {
-  @IsBlob()
-  sound: string;
 }
 
 export class DefinitionDto {

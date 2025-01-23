@@ -1,10 +1,10 @@
 import { exec } from 'child_process';
-import { promisify } from 'util';
-import * as fs from 'fs/promises';
-import sharp from 'sharp';
 import { randomUUID } from 'crypto';
-import { join, dirname, extname } from 'path';
 import { constants } from 'fs';
+import * as fs from 'fs/promises';
+import { dirname, extname, join } from 'path';
+import sharp from 'sharp';
+import { promisify } from 'util';
 
 const execPromise = promisify(exec);
 
@@ -19,9 +19,9 @@ export async function compressFile(file: Express.Multer.File) {
   if (file.mimetype.startsWith('image/')) {
     await compressImage(file);
   } else if (file.mimetype.startsWith('video/')) {
-    await compressVideo(file);
+    // await compressVideo(file);
   } else if (file.mimetype.startsWith('audio/')) {
-    await compressAudio(file);
+    // await compressAudio(file);
   }
 }
 
@@ -126,7 +126,7 @@ export async function compressAudio(file: Express.Multer.File) {
     const command = `ffmpeg -i "${file.path}" -vn -ar 44100 -ab 128k -c:a libmp3lame "${outputPath}"`;
     await execPromise(command);
 
-    await fs.unlink(file.path); // Use await
+    await fs.unlink(file.path);
     await fs.rename(outputPath, file.path);
 
     const fileExtension = extname(file.originalname);
