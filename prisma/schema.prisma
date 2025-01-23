@@ -200,8 +200,8 @@ model Word {
   contributors         User[]                   @relation("word_contributors")
   related_from         WordRelation[]           @relation("from")
   related_to           WordRelation[]           @relation("to")
-  language             Language                 @relation(fields: [language_id], references: [id]) 
-  language_id          String
+  language             Language?                 @relation(fields: [language_id], references: [id])             
+  language_id          String?
   dialect              String?
   accent               String?
   pronunciation_audios WordPronunciationAudio[] @relation(name: "word_pronunciation_audios")
