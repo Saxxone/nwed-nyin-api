@@ -200,7 +200,7 @@ model Word {
   contributors         User[]                   @relation("word_contributors")
   related_from         WordRelation[]           @relation("from")
   related_to           WordRelation[]           @relation("to")
-  language             Language?                 @relation(fields: [language_id], references: [id])             
+  language             Language?                @relation(fields: [language_id], references: [id])
   language_id          String?
   dialect              String?
   accent               String?
@@ -222,9 +222,9 @@ model WordPronunciationAudio {
   word           Word      @relation(name: "word_pronunciation_audios", fields: [word_id], references: [id])
   word_id        String
   media          Media     @relation(fields: [media_id], references: [id])
-  media_id       String // Made required earlier
+  media_id       String 
 
-  @@unique([word_id]) // Ensure only one audio per word
+  @@unique([word_id])
 }
 
 model Language {
