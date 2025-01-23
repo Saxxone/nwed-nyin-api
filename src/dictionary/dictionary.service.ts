@@ -78,6 +78,18 @@ export class DictionaryService {
         take,
         orderBy: { term: 'asc' },
         include: {
+          pronunciation_audios: {
+            select: {
+              id: true,
+              format: true,
+              file: {
+                select: {
+                  id: true,
+                  url: true,
+                },
+              },
+            },
+          },
           definitions: {
             include: {
               part_of_speech: true,
@@ -98,11 +110,25 @@ export class DictionaryService {
   }
 
   async findOne(term: string): Promise<Word | null> {
+    const file_base_url = process.cwd() + process.env.FILE_BASE_URL;
+    console.log('Current working directory:', file_base_url);
     const word = await this.prisma.word.findFirst({
       where: {
         term: term,
       },
       include: {
+        pronunciation_audios: {
+          select: {
+            id: true,
+            format: true,
+            file: {
+              select: {
+                id: true,
+                url: true,
+              },
+            },
+          },
+        },
         definitions: {
           include: {
             part_of_speech: true,
@@ -285,6 +311,7 @@ export class DictionaryService {
       const saved_sound_ids = await this.fileService.create(
         compressed_sound,
         email,
+        'pronunciations',
         {},
       );
 

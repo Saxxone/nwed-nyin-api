@@ -1,8 +1,14 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  StreamableFile,
+} from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { File as FileModel, Prisma, Status } from '@prisma/client';
+import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
-import { join } from 'path';
+import path, { join } from 'path';
 import { UserService } from 'src/user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -54,21 +60,22 @@ export class FileService {
   async create(
     files: Array<Express.Multer.File>,
     email: string,
+    folder: string,
     entity: {
       article_id?: string;
     },
   ): Promise<string[]> {
     const user = await this.userService.findUser(email);
     const saved_files: string[] = [];
-    const media_base_url = process.env.FILE_BASE_URL;
 
     for (const file of files) {
+      const { name } = path.parse(file.filename);
       const savedFile = await this.prisma.file.create({
         data: {
           filename: file.filename,
           originalname: file.originalname,
-          path: file.path,
-          url: join(media_base_url, file.filename),
+          path: join(process.env.FILE_BASE_URL, folder, file.filename),
+          url: join(process.env.FILE_BASE_URL, folder, name),
           mimetype: file.mimetype,
           size: file.size,
           status: Status.PENDING,
@@ -123,6 +130,19 @@ export class FileService {
         return file.status;
       }),
     );
+  }
+
+  async streamStaticFile(path: string): Promise<StreamableFile> {
+    const public_path = join(__dirname, '..', '..', '..', 'public', path);
+    console.log(public_path);
+    try {
+      await fs.access(public_path, constants.F_OK);
+
+      const stream = createReadStream(public_path);
+      return new StreamableFile(stream);
+    } catch {
+      throw new NotFoundException('file not found ');
+    }
   }
 
   findAll() {

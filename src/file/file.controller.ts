@@ -88,7 +88,12 @@ export class FileController {
 
     compressed_fiiles = await compressFiles(files);
 
-    return await this.fileService.create(compressed_fiiles, req.user.sub, {});
+    return await this.fileService.create(
+      compressed_fiiles,
+      req.user.sub,
+      'files',
+      {},
+    );
   }
 
   @UseInterceptors(

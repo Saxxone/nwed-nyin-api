@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,16 +10,23 @@ import {
   Post,
   Query,
   Request,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
 import { Word } from '@prisma/client';
+import { Response } from 'express';
 import { Public } from 'src/auth/auth.guard';
+import { FileService } from 'src/file/file.service';
 import { DictionaryService } from './dictionary.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 
 @Controller('dictionary')
 export class DictionaryController {
-  constructor(private readonly dictionaryService: DictionaryService) {}
+  constructor(
+    private readonly dictionaryService: DictionaryService,
+    private readonly fileService: FileService,
+  ) { }
 
   @Post('add')
   async create(
@@ -37,6 +45,31 @@ export class DictionaryController {
     });
   }
 
+  @Public()
+  @Get('sound')
+  async getArticleContent(
+    @Query('path') path: string,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<StreamableFile> {
+    try {
+      const file_name = path.split('/')[1];
+      const stream = await this.fileService.streamStaticFile(path);
+
+      res.set({
+        'Content-Type': 'audio/mpeg',
+        'Content-Disposition': `inline; filename="${encodeURI(file_name)}"`,
+      });
+
+      return stream;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      } else {
+        throw new BadRequestException('Error retrieving audio' + error);
+      }
+    }
+  }
+
   @Get('parts-of-speech')
   findAllPS() {
     return this.dictionaryService.findAllPartsOfSpeech();
@@ -45,7 +78,6 @@ export class DictionaryController {
   @Public()
   @Get('search')
   async search(@Query('term') term: string): Promise<Word[]> {
-    console.log('term: ', term);
     if (!term) {
       return [];
     }

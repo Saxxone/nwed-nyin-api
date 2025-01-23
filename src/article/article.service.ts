@@ -15,8 +15,6 @@ import { Readable } from 'stream';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
-const BASE_PATH = '../../..';
-
 @Injectable()
 export class ArticleService {
   constructor(
@@ -89,8 +87,7 @@ export class ArticleService {
     try {
       const file_path = join(
         __dirname,
-        BASE_PATH,
-        'public',
+        process.env.FILE_BASE_URL,
         'articles',
         `${slug}.md`,
       );
@@ -124,6 +121,7 @@ export class ArticleService {
           },
         ],
         email,
+        'articles',
         {
           article_id: slug,
         },
@@ -233,14 +231,20 @@ export class ArticleService {
     try {
       const file_path = join(
         __dirname,
-        BASE_PATH,
+        process.env.FILE_BASE_URL,
         'public',
         'articles',
         `${path}.md`,
       );
 
       const file = createReadStream(
-        join(__dirname, BASE_PATH, 'public', 'articles', `${path}.md`),
+        join(
+          __dirname,
+          process.env.FILE_BASE_URL,
+          'public',
+          'articles',
+          `${path}.md`,
+        ),
       );
       if (!existsSync(file_path)) {
         throw new NotFoundException('Markdown file not found');
