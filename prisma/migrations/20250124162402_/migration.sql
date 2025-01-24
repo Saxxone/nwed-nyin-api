@@ -35,7 +35,7 @@ CREATE TABLE `ArticleVersion` (
     `id` VARCHAR(191) NOT NULL,
     `article_id` VARCHAR(191) NOT NULL,
     `version` INTEGER NOT NULL,
-    `content` JSON NOT NULL,
+    `content` LONGTEXT NOT NULL,
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `created_by` VARCHAR(191) NOT NULL,
 
@@ -48,7 +48,7 @@ CREATE TABLE `ArticleVersion` (
 CREATE TABLE `ArticleMetadata` (
     `id` VARCHAR(191) NOT NULL,
     `article_id` VARCHAR(191) NOT NULL,
-    `keywords` JSON NULL,
+    `keywords` LONGTEXT NULL,
     `language` VARCHAR(191) NOT NULL DEFAULT 'en',
     `read_time` INTEGER NULL,
     `complexity` VARCHAR(191) NULL,
@@ -118,7 +118,7 @@ CREATE TABLE `Reference` (
     `url` VARCHAR(191) NULL,
     `doi` VARCHAR(191) NULL,
     `isbn` VARCHAR(191) NULL,
-    `authors` JSON NULL,
+    `authors` LONGTEXT NULL,
     `publisher` VARCHAR(191) NULL,
     `year` INTEGER NULL,
     `access_date` DATETIME(3) NOT NULL,
@@ -142,6 +142,7 @@ CREATE TABLE `Word` (
     `dialect` VARCHAR(191) NULL,
     `accent` VARCHAR(191) NULL,
 
+    INDEX `Word_language_id_fkey`(`language_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -158,6 +159,9 @@ CREATE TABLE `WordPronunciationAudio` (
     `file_id` VARCHAR(191) NOT NULL,
 
     UNIQUE INDEX `WordPronunciationAudio_word_id_key`(`word_id`),
+    INDEX `WordPronunciationAudio_contributor_id_fkey`(`contributor_id`),
+    INDEX `WordPronunciationAudio_file_id_fkey`(`file_id`),
+    INDEX `WordPronunciationAudio_language_id_fkey`(`language_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -181,6 +185,7 @@ CREATE TABLE `Dialect` (
     `updated_at` DATETIME(3) NOT NULL,
 
     UNIQUE INDEX `Dialect_name_key`(`name`),
+    INDEX `Dialect_language_id_fkey`(`language_id`),
     UNIQUE INDEX `Dialect_name_language_id_key`(`name`, `language_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -207,6 +212,8 @@ CREATE TABLE `Definition` (
     `created_at` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     `updated_at` DATETIME(3) NOT NULL,
 
+    INDEX `Definition_part_of_speech_id_fkey`(`part_of_speech_id`),
+    INDEX `Definition_word_id_fkey`(`word_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -271,6 +278,8 @@ CREATE TABLE `File` (
     `updated_at` DATETIME(3) NOT NULL,
     `deleted_at` DATETIME(3) NULL,
 
+    INDEX `File_article_id_fkey`(`article_id`),
+    INDEX `File_owner_id_fkey`(`owner_id`),
     PRIMARY KEY (`id`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
@@ -291,21 +300,12 @@ CREATE TABLE `AuthToken` (
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
-CREATE TABLE `_article_contributors` (
-    `A` VARCHAR(191) NOT NULL,
-    `B` VARCHAR(191) NOT NULL,
-
-    UNIQUE INDEX `_article_contributors_AB_unique`(`A`, `B`),
-    INDEX `_article_contributors_B_index`(`B`)
-) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- CreateTable
 CREATE TABLE `_ArticleToCategory` (
     `A` VARCHAR(191) NOT NULL,
     `B` VARCHAR(191) NOT NULL,
 
-    UNIQUE INDEX `_ArticleToCategory_AB_unique`(`A`, `B`),
-    INDEX `_ArticleToCategory_B_index`(`B`)
+    INDEX `_ArticleToCategory_B_index`(`B`),
+    UNIQUE INDEX `_ArticleToCategory_AB_unique`(`A`, `B`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
@@ -313,8 +313,17 @@ CREATE TABLE `_ArticleToTag` (
     `A` VARCHAR(191) NOT NULL,
     `B` VARCHAR(191) NOT NULL,
 
-    UNIQUE INDEX `_ArticleToTag_AB_unique`(`A`, `B`),
-    INDEX `_ArticleToTag_B_index`(`B`)
+    INDEX `_ArticleToTag_B_index`(`B`),
+    UNIQUE INDEX `_ArticleToTag_AB_unique`(`A`, `B`)
+) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- CreateTable
+CREATE TABLE `_article_contributors` (
+    `A` VARCHAR(191) NOT NULL,
+    `B` VARCHAR(191) NOT NULL,
+
+    INDEX `_article_contributors_B_index`(`B`),
+    UNIQUE INDEX `_article_contributors_AB_unique`(`A`, `B`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
@@ -322,8 +331,8 @@ CREATE TABLE `_related_articles` (
     `A` VARCHAR(191) NOT NULL,
     `B` VARCHAR(191) NOT NULL,
 
-    UNIQUE INDEX `_related_articles_AB_unique`(`A`, `B`),
-    INDEX `_related_articles_B_index`(`B`)
+    INDEX `_related_articles_B_index`(`B`),
+    UNIQUE INDEX `_related_articles_AB_unique`(`A`, `B`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- CreateTable
@@ -331,99 +340,6 @@ CREATE TABLE `_word_contributors` (
     `A` VARCHAR(191) NOT NULL,
     `B` VARCHAR(191) NOT NULL,
 
-    UNIQUE INDEX `_word_contributors_AB_unique`(`A`, `B`),
-    INDEX `_word_contributors_B_index`(`B`)
+    INDEX `_word_contributors_B_index`(`B`),
+    UNIQUE INDEX `_word_contributors_AB_unique`(`A`, `B`)
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-
--- AddForeignKey
-ALTER TABLE `Section` ADD CONSTRAINT `Section_article_id_fkey` FOREIGN KEY (`article_id`) REFERENCES `Article`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `ArticleVersion` ADD CONSTRAINT `ArticleVersion_article_id_fkey` FOREIGN KEY (`article_id`) REFERENCES `Article`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `ArticleMetadata` ADD CONSTRAINT `ArticleMetadata_article_id_fkey` FOREIGN KEY (`article_id`) REFERENCES `Article`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `UserPreference` ADD CONSTRAINT `UserPreference_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Reference` ADD CONSTRAINT `Reference_article_id_fkey` FOREIGN KEY (`article_id`) REFERENCES `Article`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Word` ADD CONSTRAINT `Word_language_id_fkey` FOREIGN KEY (`language_id`) REFERENCES `Language`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `WordPronunciationAudio` ADD CONSTRAINT `WordPronunciationAudio_language_id_fkey` FOREIGN KEY (`language_id`) REFERENCES `Language`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `WordPronunciationAudio` ADD CONSTRAINT `WordPronunciationAudio_contributor_id_fkey` FOREIGN KEY (`contributor_id`) REFERENCES `User`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `WordPronunciationAudio` ADD CONSTRAINT `WordPronunciationAudio_word_id_fkey` FOREIGN KEY (`word_id`) REFERENCES `Word`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `WordPronunciationAudio` ADD CONSTRAINT `WordPronunciationAudio_file_id_fkey` FOREIGN KEY (`file_id`) REFERENCES `File`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Dialect` ADD CONSTRAINT `Dialect_language_id_fkey` FOREIGN KEY (`language_id`) REFERENCES `Language`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `WordRelation` ADD CONSTRAINT `WordRelation_from_id_fkey` FOREIGN KEY (`from_id`) REFERENCES `Word`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `WordRelation` ADD CONSTRAINT `WordRelation_to_id_fkey` FOREIGN KEY (`to_id`) REFERENCES `Word`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Definition` ADD CONSTRAINT `Definition_word_id_fkey` FOREIGN KEY (`word_id`) REFERENCES `Word`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Definition` ADD CONSTRAINT `Definition_part_of_speech_id_fkey` FOREIGN KEY (`part_of_speech_id`) REFERENCES `PartOfSpeech`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Example` ADD CONSTRAINT `Example_definition_id_fkey` FOREIGN KEY (`definition_id`) REFERENCES `Definition`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Synonym` ADD CONSTRAINT `Synonym_definition_id_fkey` FOREIGN KEY (`definition_id`) REFERENCES `Definition`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `Antonym` ADD CONSTRAINT `Antonym_definition_id_fkey` FOREIGN KEY (`definition_id`) REFERENCES `Definition`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `File` ADD CONSTRAINT `File_owner_id_fkey` FOREIGN KEY (`owner_id`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `File` ADD CONSTRAINT `File_article_id_fkey` FOREIGN KEY (`article_id`) REFERENCES `Article`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `AuthToken` ADD CONSTRAINT `AuthToken_user_id_fkey` FOREIGN KEY (`user_id`) REFERENCES `User`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_article_contributors` ADD CONSTRAINT `_article_contributors_A_fkey` FOREIGN KEY (`A`) REFERENCES `Article`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_article_contributors` ADD CONSTRAINT `_article_contributors_B_fkey` FOREIGN KEY (`B`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_ArticleToCategory` ADD CONSTRAINT `_ArticleToCategory_A_fkey` FOREIGN KEY (`A`) REFERENCES `Article`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_ArticleToCategory` ADD CONSTRAINT `_ArticleToCategory_B_fkey` FOREIGN KEY (`B`) REFERENCES `Category`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_ArticleToTag` ADD CONSTRAINT `_ArticleToTag_A_fkey` FOREIGN KEY (`A`) REFERENCES `Article`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_ArticleToTag` ADD CONSTRAINT `_ArticleToTag_B_fkey` FOREIGN KEY (`B`) REFERENCES `Tag`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_related_articles` ADD CONSTRAINT `_related_articles_A_fkey` FOREIGN KEY (`A`) REFERENCES `Article`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_related_articles` ADD CONSTRAINT `_related_articles_B_fkey` FOREIGN KEY (`B`) REFERENCES `Article`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_word_contributors` ADD CONSTRAINT `_word_contributors_A_fkey` FOREIGN KEY (`A`) REFERENCES `User`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE `_word_contributors` ADD CONSTRAINT `_word_contributors_B_fkey` FOREIGN KEY (`B`) REFERENCES `Word`(`id`) ON DELETE CASCADE ON UPDATE CASCADE;
