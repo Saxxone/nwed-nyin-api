@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE `Word` ADD COLUMN `sound` VARCHAR(191) NULL;
