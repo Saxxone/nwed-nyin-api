@@ -21,7 +21,7 @@ export async function compressFile(file: Express.Multer.File) {
   } else if (file.mimetype.startsWith('video/')) {
     // await compressVideo(file);
   } else if (file.mimetype.startsWith('audio/')) {
-    await compressAudio(file);
+    await saveAudio(file);
   }
 }
 
@@ -118,14 +118,35 @@ export async function compressVideo(file: Express.Multer.File) {
   }
 }
 
+export async function saveAudio(file: Express.Multer.File) {
+  // Renamed function
+  try {
+    const uniqueId = randomUUID();
+    const fileExtension = extname(file.originalname);
+    const newFileName = `${file.originalname.split('.')[0]}_${uniqueId}${fileExtension}`;
+    const newFilePath = join(dirname(file.path), newFileName);
+
+    await fs.rename(file.path, newFilePath); // Move/Rename the file
+
+    // Update the file object
+    file.path = newFilePath;
+    file.filename = newFileName;
+
+    console.log(`Saved audio: ${file.originalname} as ${newFileName}`);
+  } catch (error) {
+    console.error(`Error saving audio ${file.originalname}:`, error);
+    throw error; // Re-throw for proper error handling in calling functions
+  }
+}
+
 export async function compressAudio(file: Express.Multer.File) {
   const old_file_name = file.filename;
   const unique_id = randomUUID();
   const output_path = `${file.path}_${unique_id}_compressed.mp3`;
 
   try {
-    const command = `ffmpeg -i "${file.path}" -vn -ar 44100 -ab 128k -c:a libmp3lame "${output_path}"`;
-    await execPromise(command);
+    // const command = `ffmpeg -i "${file.path}" -vn -ar 44100 -ab 128k -c:a libmp3lame "${output_path}"`;
+    // await execPromise(command);
 
     await fs.unlink(file.path);
     await fs.rename(output_path, file.path);
