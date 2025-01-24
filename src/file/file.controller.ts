@@ -92,7 +92,6 @@ export class FileController {
       compressed_fiiles,
       req.user.sub,
       'files',
-      {},
     );
   }
 

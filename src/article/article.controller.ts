@@ -19,10 +19,14 @@ import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { Article } from '@prisma/client';
 import { Public } from 'src/auth/auth.guard';
+import { FileService } from 'src/file/file.service';
 
 @Controller('article')
 export class ArticleController {
-  constructor(private readonly articleService: ArticleService) {}
+  constructor(
+    private readonly articleService: ArticleService,
+    private readonly fileService: FileService,
+  ) {}
 
   @Post('publish')
   create(
@@ -53,14 +57,14 @@ export class ArticleController {
   @Public()
   @Get('markdown/:path')
   getArticleContent(
-    @Param('path') path: string,
+    @Query('path') path: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     res.set({
       'Content-Type': 'text/markdown',
       'Content-Disposition': `inline; filename="${path}.md"`,
     });
-    return this.articleService.getMarkdown(path);
+    return this.fileService.streamStaticFile(path);
   }
 
   @Patch(':id')

@@ -5,10 +5,10 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { File as FileModel, Prisma, Status } from '@prisma/client';
+import { File as FileModel, FileType, Prisma, Status } from '@prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
-import path, { join } from 'path';
+import { join, parse } from 'path';
 import { UserService } from 'src/user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -57,19 +57,33 @@ export class FileService {
     }
   }
 
+  private mimeToFileType(mimetype: string): FileType {
+    const type = mimetype.split('/')[0].toUpperCase();
+    switch (type) {
+      case 'IMAGE':
+        return FileType.IMAGE;
+      case 'VIDEO':
+        return FileType.VIDEO;
+      case 'AUDIO':
+        return FileType.AUDIO;
+      case 'TEXT':
+      case 'APPLICATION':
+        return FileType.DOCUMENT;
+      default:
+        return FileType.DOCUMENT;
+    }
+  }
+
   async create(
     files: Array<Express.Multer.File>,
     email: string,
     folder: string,
-    entity: {
-      article_id?: string;
-    },
   ): Promise<string[]> {
     const user = await this.userService.findUser(email);
     const saved_files: string[] = [];
 
     for (const file of files) {
-      const { name } = path.parse(file.filename);
+      const { name } = parse(file.filename);
       const savedFile = await this.prisma.file.create({
         data: {
           filename: file.filename,
@@ -79,12 +93,9 @@ export class FileService {
           mimetype: file.mimetype,
           size: file.size,
           status: Status.PENDING,
-          type: file.mimetype.split('/')[0].toUpperCase(),
+          type: this.mimeToFileType(file.mimetype),
           owner: {
             connect: { id: user.id },
-          },
-          article: entity?.article_id && {
-            connect: { id: entity.article_id },
           },
         } as Prisma.FileCreateInput,
       });

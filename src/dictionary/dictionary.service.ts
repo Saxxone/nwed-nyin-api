@@ -312,7 +312,6 @@ export class DictionaryService {
         compressed_sound,
         email,
         'pronunciations',
-        {},
       );
 
       const word = await this.prisma.word.findUnique({ where: { id } });

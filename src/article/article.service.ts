@@ -2,11 +2,10 @@ import {
   Injectable,
   NotFoundException,
   NotImplementedException,
-  StreamableFile,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Article, File, Status } from '@prisma/client';
-import { createReadStream, existsSync, promises as fs } from 'fs';
+import { promises as fs } from 'fs';
 import { dirname, join } from 'path';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -122,9 +121,6 @@ export class ArticleService {
         ],
         email,
         'articles',
-        {
-          article_id: slug,
-        },
       );
       const markdown_file = await this.prisma.file.findUnique({
         where: { id: markdown_file_ids[0] },
@@ -140,7 +136,7 @@ export class ArticleService {
     create_article_dto: CreateArticleDto,
     email: string,
   ): Promise<Article> {
-    const { content, ...article_data } = create_article_dto;
+    const { content, file: file_data, ...article_data } = create_article_dto;
 
     return await this.prisma.$transaction(async (prisma) => {
       try {
@@ -152,22 +148,13 @@ export class ArticleService {
 
         const sections = this.extractSectionsFromMarkdown(content);
 
-        const { file, file_path } = await this.writeMarkdownFile(
-          slug,
-          content,
-          email,
-        );
-
         const article = await prisma.article.create({
           data: {
             ...article_data,
             slug: slug,
+            body: '',
             status: Status.PUBLISHED,
-            body: file_path,
             summary: content.substring(0, 50),
-            file: {
-              create: file,
-            },
             sections: {
               create: sections,
             },
@@ -179,7 +166,32 @@ export class ArticleService {
           },
         });
 
-        return article;
+        console.log('article', article);
+
+        const { file, file_path } = await this.writeMarkdownFile(
+          slug,
+          content,
+          email,
+        );
+
+        const updated_article = await prisma.article.update({
+          where: { id: article.id },
+          data: {
+            slug: slug,
+            status: Status.PUBLISHED,
+            body: file_path,
+            file: { connect: { id: file.id } },
+            sections: { create: sections },
+          },
+          include: { file: true, sections: true },
+        });
+
+        await this.prisma.file.update({
+          where: { id: file.id },
+          data: { article: { connect: { id: updated_article.id } } },
+        });
+
+        return updated_article;
       } catch (error) {
         throw new NotImplementedException(`error publishing post ${error}`);
       }
@@ -227,33 +239,33 @@ export class ArticleService {
     return article;
   }
 
-  async getMarkdown(path: string): Promise<StreamableFile> {
-    try {
-      const file_path = join(
-        __dirname,
-        process.env.FILE_BASE_URL,
-        'public',
-        'articles',
-        `${path}.md`,
-      );
+  // async getMarkdown(path: string): Promise<StreamableFile> {
+  //   try {
+  //     const file_path = join(
+  //       __dirname,
+  //       process.env.FILE_BASE_URL,
+  //       'public',
+  //       'articles',
+  //       `${path}.md`,
+  //     );
 
-      const file = createReadStream(
-        join(
-          __dirname,
-          process.env.FILE_BASE_URL,
-          'public',
-          'articles',
-          `${path}.md`,
-        ),
-      );
-      if (!existsSync(file_path)) {
-        throw new NotFoundException('Markdown file not found');
-      }
-      return new StreamableFile(file);
-    } catch (error) {
-      throw new NotFoundException('Markdown file not found' + error);
-    }
-  }
+  //     const file = createReadStream(
+  //       join(
+  //         __dirname,
+  //         process.env.FILE_BASE_URL,
+  //         'public',
+  //         'articles',
+  //         `${path}.md`,
+  //       ),
+  //     );
+  //     if (!existsSync(file_path)) {
+  //       throw new NotFoundException('Markdown file not found');
+  //     }
+  //     return new StreamableFile(file);
+  //   } catch (error) {
+  //     throw new NotFoundException('Markdown file not found' + error);
+  //   }
+  // }
 
   async update(
     slug: string,
@@ -262,14 +274,14 @@ export class ArticleService {
   ): Promise<Article> {
     const { ...article_data } = update_article_dto;
 
-    const existingArticle = await this.prisma.article.findUnique({
+    const existing_article = await this.prisma.article.findUnique({
       where: { slug },
     });
 
     const user = await this.userService.findUser(email);
 
     if (!user) throw new UnauthorizedException('Login or create account');
-    if (!existingArticle) {
+    if (!existing_article) {
       throw new NotFoundException(`Article with slug ${slug} not found`);
     }
 

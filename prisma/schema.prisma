@@ -16,7 +16,7 @@ model Article {
   title        String
   slug         String           @unique
   summary      String
-  body         String
+  body         String?
   sections     Section[]
   created_at   DateTime         @default(now())
   updated_at   DateTime         @updatedAt
