@@ -26,7 +26,7 @@ export class DictionaryController {
   constructor(
     private readonly dictionaryService: DictionaryService,
     private readonly fileService: FileService,
-  ) { }
+  ) {}
 
   @Post('add')
   async create(
