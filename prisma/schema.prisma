@@ -1,3 +1,4 @@
+// This is your Prisma schema file
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-1.0.x"]
@@ -9,28 +10,40 @@ datasource db {
   shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
 }
 
+//articles 
 model Article {
-  id         String    @id @default(cuid())
-  title      String
-  slug       String    @unique
-  summary    String
-  body       String?
-  created_at DateTime  @default(now())
-  updated_at DateTime  @updatedAt
-  deleted_at DateTime? @default(now())
-  created_by String?
-  updated_by String?
-  version    Int       @default(1)
-  status     Status    @default(DRAFT)
+  id           String           @id @default(cuid())
+  title        String
+  slug         String           @unique
+  summary      String
+  body         String?
+  sections     Section[]
+  created_at   DateTime         @default(now())
+  updated_at   DateTime         @updatedAt
+  deleted_at   DateTime?        @default(now())
+  contributors User[]           @relation("article_contributors")
+  created_by   String?
+  updated_by   String?
+  version      Int              @default(1)
+  categories   Category[]
+  tags         Tag[]
+  references   Reference[]
+  related_from Article[]        @relation("related_articles")
+  related_to   Article[]        @relation("related_articles")
+  file         File[]
+  status       Status           @default(DRAFT)
+  metadata     ArticleMetadata?
+  versions     ArticleVersion[]
 
   @@index([created_by])
   @@index([status, created_at])
 }
 
 model Section {
-  id         String @id @default(cuid())
+  id         String  @id @default(cuid())
   title      String
   content    String
+  article    Article @relation(fields: [article_id], references: [id])
   article_id String
 
   @@index([article_id])
@@ -38,9 +51,10 @@ model Section {
 
 model ArticleVersion {
   id         String   @id @default(cuid())
+  article    Article  @relation(fields: [article_id], references: [id])
   article_id String
   version    Int
-  content    String   @db.LongText
+  content    Json
   created_at DateTime @default(now())
   created_by String
 
@@ -50,26 +64,33 @@ model ArticleVersion {
 
 model ArticleMetadata {
   id         String  @id @default(cuid())
+  article    Article @relation(fields: [article_id], references: [id])
   article_id String  @unique
-  keywords   String? @db.LongText
+  keywords   Json?
   language   String  @default("en")
   read_time  Int?
   complexity String?
 }
 
 model User {
-  id              String    @id @default(cuid())
-  name            String
-  email           String    @unique
-  password        String?
-  img             String
-  role            Role
-  active          Boolean   @default(true)
-  last_login      DateTime?
-  verified_at     DateTime?
-  two_factor_auth Boolean   @default(false)
-  created_at      DateTime  @default(now())
-  updated_at      DateTime  @updatedAt
+  id                        String                   @id @default(cuid())
+  name                      String
+  articles                  Article[]                @relation("article_contributors")
+  email                     String                   @unique
+  password                  String?
+  img                       String
+  role                      Role
+  active                    Boolean                  @default(true)
+  last_login                DateTime?
+  preferences               UserPreference[]
+  verified_at               DateTime?
+  two_factor_auth           Boolean                  @default(false)
+  created_at                DateTime                 @default(now())
+  updated_at                DateTime                 @updatedAt
+  contributed_words         Word[]                   @relation("word_contributors")
+  files                     File[]                   @relation("UserToFiles")
+  auth_token                AuthToken[]              @relation("UserToAuthTokens")
+  word_pronunciation_audios WordPronunciationAudio[]
 
   @@index([email])
   @@index([role])
@@ -77,6 +98,7 @@ model User {
 
 model UserPreference {
   id      String @id @default(cuid())
+  user    User   @relation(fields: [user_id], references: [id])
   user_id String @unique
   key     String
   value   String
@@ -84,16 +106,24 @@ model UserPreference {
   @@unique([user_id, key])
 }
 
+enum Role {
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
 model Category {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  id         String    @id @default(cuid())
+  name       String    @unique
+  articles   Article[]
+  created_at DateTime  @default(now())
+  updated_at DateTime  @updatedAt
 }
 
 model Tag {
-  id   String @id @default(cuid())
-  name String @unique
+  id       String    @id @default(cuid())
+  name     String    @unique
+  articles Article[]
 }
 
 model Reference {
@@ -101,206 +131,16 @@ model Reference {
   type        ReferenceType @default(WEBSITE)
   citation    String
   url         String?
-  doi         String?
-  isbn        String?
-  authors     String?       @db.LongText
+  doi         String? // Digital Object Identifier
+  isbn        String? // For book references
+  authors     Json? // Store as JSON array
   publisher   String?
   year        Int?
   access_date DateTime
+  article     Article       @relation(fields: [article_id], references: [id])
   article_id  String
 
   @@index([article_id])
-}
-
-model Word {
-  id            String    @id @default(cuid())
-  term          String
-  pronunciation String?
-  etymology     String?   @db.VarChar(255)
-  alt_spelling  String?   @db.VarChar(255)
-  created_at    DateTime  @default(now())
-  updated_at    DateTime  @updatedAt
-  deleted_at    DateTime?
-  language_id   String?
-  dialect       String?
-  accent        String?
-
-  @@index([language_id], map: "Word_language_id_fkey")
-}
-
-model WordPronunciationAudio {
-  id             String   @id @default(cuid())
-  format         String?  @db.VarChar(50)
-  language_id    String?
-  status         Status   @default(PENDING)
-  contributor_id String?
-  created_at     DateTime @default(now())
-  updated_at     DateTime @updatedAt
-  word_id        String   @unique
-  file_id        String
-
-  @@index([contributor_id], map: "WordPronunciationAudio_contributor_id_fkey")
-  @@index([file_id], map: "WordPronunciationAudio_file_id_fkey")
-  @@index([language_id], map: "WordPronunciationAudio_language_id_fkey")
-}
-
-model Language {
-  id         String   @id @default(cuid())
-  name       String   @unique
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-}
-
-model Dialect {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  language_id String
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
-
-  @@unique([name, language_id])
-  @@index([language_id], map: "Dialect_language_id_fkey")
-}
-
-model WordRelation {
-  id      String       @id @default(cuid())
-  from_id String
-  to_id   String
-  type    RelationType
-
-  @@index([from_id])
-  @@index([to_id])
-}
-
-model Definition {
-  id                String   @id @default(cuid())
-  word_id           String
-  part_of_speech_id String
-  meaning           String   @db.VarChar(500)
-  order             Int?
-  created_at        DateTime @default(now())
-  updated_at        DateTime @updatedAt
-
-  @@index([part_of_speech_id], map: "Definition_part_of_speech_id_fkey")
-  @@index([word_id], map: "Definition_word_id_fkey")
-}
-
-model PartOfSpeech {
-  id   String @id @default(cuid())
-  name String @unique
-}
-
-model Example {
-  id            String   @id @default(cuid())
-  definition_id String
-  sentence      String   @db.Text
-  created_at    DateTime @default(now())
-  updated_at    DateTime @updatedAt
-
-  @@index([definition_id])
-}
-
-model Synonym {
-  id            String @id @default(cuid())
-  definition_id String
-  synonym       String @db.VarChar(255)
-
-  @@index([definition_id])
-}
-
-model Antonym {
-  id            String @id @default(cuid())
-  definition_id String
-  antonym       String @db.VarChar(255)
-
-  @@index([definition_id])
-}
-
-model File {
-  id           String    @id @default(uuid())
-  originalname String
-  filename     String
-  size         Int
-  type         FileType
-  url          String
-  path         String
-  mimetype     String
-  caption      String?
-  credit       String?
-  alt_text     String?
-  status       Status    @default(PENDING)
-  owner_id     String
-  article_id   String?
-  created_at   DateTime  @default(now())
-  updated_at   DateTime  @updatedAt
-  deleted_at   DateTime?
-
-  @@index([article_id], map: "File_article_id_fkey")
-  @@index([owner_id], map: "File_owner_id_fkey")
-}
-
-model AuthToken {
-  id               String   @id @default(uuid())
-  user_id          String
-  token            String   @db.Text
-  token_hash       String   @unique
-  expires_at       DateTime
-  created_at       DateTime @default(now())
-  updated_at       DateTime @updatedAt
-  is_refresh_token Boolean  @default(false)
-
-  @@unique([user_id, is_refresh_token])
-}
-
-model ArticleToCategory {
-  A String
-  B String
-
-  @@unique([A, B], map: "_ArticleToCategory_AB_unique")
-  @@index([B], map: "_ArticleToCategory_B_index")
-  @@map("_ArticleToCategory")
-}
-
-model ArticleToTag {
-  A String
-  B String
-
-  @@unique([A, B], map: "_ArticleToTag_AB_unique")
-  @@index([B], map: "_ArticleToTag_B_index")
-  @@map("_ArticleToTag")
-}
-
-model article_contributors {
-  A String
-  B String
-
-  @@unique([A, B], map: "_article_contributors_AB_unique")
-  @@index([B], map: "_article_contributors_B_index")
-  @@map("_article_contributors")
-}
-
-model related_articles {
-  A String
-  B String
-
-  @@unique([A, B], map: "_related_articles_AB_unique")
-  @@index([B], map: "_related_articles_B_index")
-  @@map("_related_articles")
-}
-
-model word_contributors {
-  A String
-  B String
-
-  @@unique([A, B], map: "_word_contributors_AB_unique")
-  @@index([B], map: "_word_contributors_B_index")
-  @@map("_word_contributors")
-}
-
-enum Role {
-  ADMIN
-  EDITOR
-  VIEWER
 }
 
 enum ReferenceType {
@@ -330,9 +170,168 @@ enum Status {
   SEEN
 }
 
+//Dictionary
+model Word {
+  id                   String                   @id @default(cuid())
+  term                 String
+  pronunciation        String?
+  etymology            String?                  @db.VarChar(255)
+  alt_spelling         String?                  @db.VarChar(255)
+  definitions          Definition[]
+  created_at           DateTime                 @default(now())
+  updated_at           DateTime                 @updatedAt
+  deleted_at           DateTime?
+  contributors         User[]                   @relation("word_contributors")
+  related_from         WordRelation[]           @relation("from")
+  related_to           WordRelation[]           @relation("to")
+  language             Language?                @relation(fields: [language_id], references: [id])
+  language_id          String?
+  dialect              String?
+  accent               String?
+  pronunciation_audios WordPronunciationAudio[] @relation(name: "word_pronunciation_audios")
+}
+
+model WordPronunciationAudio {
+  id             String    @id @default(cuid())
+  format         String?   @db.VarChar(50)
+  language       Language? @relation(fields: [language_id], references: [id])
+  language_id    String?
+  status         Status    @default(PENDING)
+  contributor    User?     @relation(fields: [contributor_id], references: [id])
+  contributor_id String?
+  created_at     DateTime  @default(now())
+  updated_at     DateTime  @updatedAt
+  word           Word      @relation(name: "word_pronunciation_audios", fields: [word_id], references: [id])
+  word_id        String
+  file           File      @relation(fields: [file_id], references: [id])
+  file_id        String
+
+  @@unique([word_id])
+}
+
+model Language {
+  id                       String                   @id @default(cuid())
+  name                     String                   @unique
+  words                    Word[]
+  dialects                 Dialect[]
+  created_at               DateTime                 @default(now())
+  updated_at               DateTime                 @updatedAt
+  word_pronunciation_audio WordPronunciationAudio[]
+}
+
+model Dialect {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  language    Language @relation(fields: [language_id], references: [id])
+  language_id String
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  @@unique([name, language_id])
+}
+
+model WordRelation {
+  id        String       @id @default(cuid())
+  word_from Word         @relation("from", fields: [from_id], references: [id])
+  from_id   String
+  word_to   Word         @relation("to", fields: [to_id], references: [id])
+  to_id     String
+  type      RelationType
+
+  @@index([from_id])
+  @@index([to_id])
+}
+
 enum RelationType {
   VARIANT
   DERIVED
   COMPOUND
   ROOT
+}
+
+model Definition {
+  id                String       @id @default(cuid())
+  word              Word         @relation(fields: [word_id], references: [id])
+  word_id           String
+  part_of_speech    PartOfSpeech @relation(fields: [part_of_speech_id], references: [id])
+  part_of_speech_id String
+  meaning           String       @db.VarChar(500)
+  examples          Example[]
+  synonyms          Synonym[]
+  antonyms          Antonym[]
+  order             Int?
+  created_at        DateTime     @default(now())
+  updated_at        DateTime     @updatedAt
+}
+
+model PartOfSpeech {
+  id          String       @id @default(cuid())
+  name        String       @unique
+  definitions Definition[]
+}
+
+model Example {
+  id            String     @id @default(cuid())
+  definition    Definition @relation(fields: [definition_id], references: [id])
+  definition_id String
+  sentence      String     @db.Text
+  created_at    DateTime   @default(now())
+  updated_at    DateTime   @updatedAt
+
+  @@index([definition_id])
+}
+
+model Synonym {
+  id            String     @id @default(cuid())
+  definition    Definition @relation(fields: [definition_id], references: [id])
+  definition_id String
+  synonym       String     @db.VarChar(255)
+
+  @@index([definition_id])
+}
+
+model Antonym {
+  id            String     @id @default(cuid())
+  definition    Definition @relation(fields: [definition_id], references: [id])
+  definition_id String
+  antonym       String     @db.VarChar(255)
+
+  @@index([definition_id])
+}
+
+model File {
+  id                       String                   @id @default(uuid())
+  originalname             String
+  filename                 String
+  size                     Int
+  type                     FileType
+  url                      String
+  path                     String
+  mimetype                 String
+  caption                  String?
+  credit                   String?
+  alt_text                 String?
+  status                   Status                   @default(PENDING)
+  owner                    User                     @relation("UserToFiles", fields: [owner_id], references: [id])
+  owner_id                 String
+  article_id               String?
+  article                  Article?                 @relation(fields: [article_id], references: [id])
+  word_pronunciation_audio WordPronunciationAudio[]
+  created_at               DateTime                 @default(now())
+  updated_at               DateTime                 @updatedAt
+  deleted_at               DateTime?
+}
+
+model AuthToken {
+  id               String   @id @default(uuid())
+  user_id          String
+  user             User     @relation("UserToAuthTokens", fields: [user_id], references: [id])
+  token            String   @db.Text
+  token_hash       String   @unique
+  expires_at       DateTime
+  created_at       DateTime @default(now())
+  updated_at       DateTime @updatedAt
+  is_refresh_token Boolean  @default(false)
+
+  @@unique([user_id, is_refresh_token])
 }
