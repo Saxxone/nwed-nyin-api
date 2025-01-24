@@ -19,7 +19,7 @@ import { UpdateFileDto } from './dto/update-file.dto';
 import { compressFiles } from './file.manager';
 import { FileService } from './file.service';
 
-const destination = join(__dirname, '../../../../', 'media');
+const destination = join(__dirname, '../../../', 'public/pronunciations');
 
 fs.mkdirSync(destination, { recursive: true });
 
@@ -124,13 +124,19 @@ export class FileController {
     if (req.files) {
       files = req.files;
     }
-
+    console.log('files', files);
     if (files.length === 0) throw new BadRequestException('No files found.');
 
     const compressed_files = await compressFiles(files);
     return await this.dictionaryService.updateWordPronunciation(
       id,
-      compressed_files,
+      [
+        {
+          ...compressed_files[0],
+          filename: req.files[0].filename,
+          originalname: req.files[0].originalname,
+        },
+      ],
       req.user.sub,
     );
   }

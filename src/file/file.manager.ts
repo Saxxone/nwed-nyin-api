@@ -21,7 +21,7 @@ export async function compressFile(file: Express.Multer.File) {
   } else if (file.mimetype.startsWith('video/')) {
     // await compressVideo(file);
   } else if (file.mimetype.startsWith('audio/')) {
-    // await compressAudio(file);
+    await compressAudio(file);
   }
 }
 
@@ -119,21 +119,19 @@ export async function compressVideo(file: Express.Multer.File) {
 }
 
 export async function compressAudio(file: Express.Multer.File) {
-  const uniqueId = randomUUID();
-  const outputPath = `${file.path}_${uniqueId}_compressed.mp3`;
+  const old_file_name = file.filename;
+  const unique_id = randomUUID();
+  const output_path = `${file.path}_${unique_id}_compressed.mp3`;
 
   try {
-    const command = `ffmpeg -i "${file.path}" -vn -ar 44100 -ab 128k -c:a libmp3lame "${outputPath}"`;
+    const command = `ffmpeg -i "${file.path}" -vn -ar 44100 -ab 128k -c:a libmp3lame "${output_path}"`;
     await execPromise(command);
 
     await fs.unlink(file.path);
-    await fs.rename(outputPath, file.path);
+    await fs.rename(output_path, file.path);
 
-    const fileExtension = extname(file.originalname);
-    const newFileName = `${file.originalname.split('.')[0]}_${uniqueId}${fileExtension}`;
-
-    file.path = join(dirname(file.path), newFileName);
-    file.filename = newFileName;
+    file.path = join(dirname(file.path), old_file_name);
+    file.filename = old_file_name;
 
     console.log(`Compressed audio: ${file.originalname}`);
   } catch (error) {
@@ -142,7 +140,7 @@ export async function compressAudio(file: Express.Multer.File) {
       console.error('FFmpeg stderr:', (error as any).stderr);
     }
 
-    await fs.access(outputPath, constants.F_OK);
-    await fs.unlink(outputPath);
+    await fs.access(output_path, constants.F_OK);
+    await fs.unlink(output_path);
   }
 }

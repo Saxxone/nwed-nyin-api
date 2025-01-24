@@ -1,25 +1,25 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
-  Query,
-  Res,
-  Request,
-  ParseUUIDPipe,
+  Get,
   NotFoundException,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  Request,
+  Res,
   StreamableFile,
 } from '@nestjs/common';
+import { Article } from '@prisma/client';
 import { Response } from 'express';
+import { Public } from 'src/auth/auth.guard';
+import { FileService } from 'src/file/file.service';
 import { ArticleService } from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
-import { Article } from '@prisma/client';
-import { Public } from 'src/auth/auth.guard';
-import { FileService } from 'src/file/file.service';
 
 @Controller('article')
 export class ArticleController {

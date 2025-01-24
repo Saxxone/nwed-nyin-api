@@ -8,7 +8,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { File as FileModel, FileType, Prisma, Status } from '@prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
-import { join, parse } from 'path';
+import { join } from 'path';
 import { UserService } from 'src/user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -83,13 +83,12 @@ export class FileService {
     const saved_files: string[] = [];
 
     for (const file of files) {
-      const { name } = parse(file.filename);
       const savedFile = await this.prisma.file.create({
         data: {
           filename: file.filename,
           originalname: file.originalname,
           path: join(process.env.FILE_BASE_URL, folder, file.filename),
-          url: join(process.env.FILE_BASE_URL, folder, name),
+          url: join(process.env.FILE_BASE_URL, folder, file.filename),
           mimetype: file.mimetype,
           size: file.size,
           status: Status.PENDING,
@@ -144,7 +143,7 @@ export class FileService {
   }
 
   async streamStaticFile(path: string): Promise<StreamableFile> {
-    const public_path = join(__dirname, '..', '..', '..', 'public', path);
+    const public_path = join(__dirname, '..', '..', '..', path);
     console.log(public_path);
     try {
       await fs.access(public_path, constants.F_OK);

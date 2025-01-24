@@ -111,7 +111,6 @@ export class DictionaryService {
 
   async findOne(term: string): Promise<Word | null> {
     const file_base_url = process.cwd() + process.env.FILE_BASE_URL;
-    console.log('Current working directory:', file_base_url);
     const word = await this.prisma.word.findFirst({
       where: {
         term: term,
@@ -307,6 +306,7 @@ export class DictionaryService {
   ): Promise<Word> {
     try {
       const user = await this.userService.findUser(email);
+
 
       const saved_sound_ids = await this.fileService.create(
         compressed_sound,

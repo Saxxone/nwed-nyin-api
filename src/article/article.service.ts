@@ -4,13 +4,13 @@ import {
   NotImplementedException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Article, File, Status } from '@prisma/client';
+import { Article, FileType, Status } from '@prisma/client';
 import { promises as fs } from 'fs';
+import { console } from 'inspector';
 import { dirname, join } from 'path';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
-import { Readable } from 'stream';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
@@ -23,7 +23,7 @@ export class ArticleService {
   ) {}
 
   private async slugify(title: string): Promise<string> {
-    let slug = title.toLowerCase().replace(/\s+/g, '-');
+    let slug = title.toLowerCase().normalize('NFD').replace(/\s+/g, '-');
     let slugExists = await this.prisma.article.count({ where: { slug } });
     let counter = 1;
 
@@ -78,11 +78,7 @@ export class ArticleService {
   private async writeMarkdownFile(
     slug: string,
     content: string,
-    email: string,
-  ): Promise<{
-    file: File;
-    file_path: string;
-  }> {
+  ): Promise<string> {
     try {
       const file_path = join(
         __dirname,
@@ -104,31 +100,10 @@ export class ArticleService {
 
       await fs.writeFile(file_path, content);
 
-      const markdown_file_ids = await this.fileService.create(
-        [
-          {
-            fieldname: slug,
-            originalname: slug,
-            buffer: Buffer.from(content),
-            mimetype: 'text/markdown',
-            encoding: 'utf-8',
-            size: content.length,
-            stream: new Readable(),
-            destination: file_path,
-            filename: slug,
-            path: file_path,
-          },
-        ],
-        email,
-        'articles',
-      );
-      const markdown_file = await this.prisma.file.findUnique({
-        where: { id: markdown_file_ids[0] },
-      });
-
-      return { file: markdown_file, file_path };
+      return file_path;
     } catch (error) {
-      throw new NotImplementedException(`error writing markdown file ${error}`);
+      console.error('Error writing markdown file:', error);
+      return null;
     }
   }
 
@@ -136,23 +111,41 @@ export class ArticleService {
     create_article_dto: CreateArticleDto,
     email: string,
   ): Promise<Article> {
-    const { content, file: file_data, ...article_data } = create_article_dto;
+    console.log(email);
+    const {
+      content,
+      file: article_media_contents,
+      ...article_data
+    } = create_article_dto;
+
+    const slug = await this.slugify(article_data.title);
+
+    const file_path = await this.writeMarkdownFile(slug, content);
+
+    if (!file_path) {
+      throw new NotImplementedException('Error creating markdown file');
+    }
 
     return await this.prisma.$transaction(async (prisma) => {
+      console.log('0: Before starting');
       try {
+        console.log('1: Before finding user');
         const user = await this.userService.findUser(email);
+
+        console.log('2: User found:', user);
 
         if (!user) throw new UnauthorizedException('Login or create account');
 
-        const slug = await this.slugify(article_data.title);
-
+        console.log('5: Before extracting sections');
         const sections = this.extractSectionsFromMarkdown(content);
+
+        console.log('6: Sections extracted ');
 
         const article = await prisma.article.create({
           data: {
             ...article_data,
             slug: slug,
-            body: '',
+            body: 'articles/' + slug + '.md',
             status: Status.PUBLISHED,
             summary: content.substring(0, 50),
             sections: {
@@ -163,35 +156,24 @@ export class ArticleService {
             },
             created_by: email,
             updated_by: email,
+            file: {
+              create: {
+                originalname: slug + '.md',
+                mimetype: 'text/markdown',
+                size: content.length,
+                type: FileType.DOCUMENT,
+                url: file_path,
+                owner: {
+                  connect: user,
+                },
+                filename: slug,
+                path: file_path,
+              },
+            },
           },
         });
 
-        console.log('article', article);
-
-        const { file, file_path } = await this.writeMarkdownFile(
-          slug,
-          content,
-          email,
-        );
-
-        const updated_article = await prisma.article.update({
-          where: { id: article.id },
-          data: {
-            slug: slug,
-            status: Status.PUBLISHED,
-            body: file_path,
-            file: { connect: { id: file.id } },
-            sections: { create: sections },
-          },
-          include: { file: true, sections: true },
-        });
-
-        await this.prisma.file.update({
-          where: { id: file.id },
-          data: { article: { connect: { id: updated_article.id } } },
-        });
-
-        return updated_article;
+        return article;
       } catch (error) {
         throw new NotImplementedException(`error publishing post ${error}`);
       }
@@ -276,6 +258,9 @@ export class ArticleService {
 
     const existing_article = await this.prisma.article.findUnique({
       where: { slug },
+      include: {
+        file: true,
+      },
     });
 
     const user = await this.userService.findUser(email);
@@ -290,11 +275,7 @@ export class ArticleService {
 
     const new_slug = await this.slugify(article_data.title);
 
-    const { file, file_path } = await this.writeMarkdownFile(
-      slug,
-      article_data.content,
-      email,
-    );
+    const file_path = await this.writeMarkdownFile(slug, article_data.content);
 
     return this.prisma.article.update({
       where: { slug },
@@ -305,7 +286,18 @@ export class ArticleService {
         body: file_path,
         summary: markdown.substring(0, 50),
         file: {
-          create: file,
+          create: {
+            originalname: new_slug + '.md',
+            mimetype: 'text/markdown',
+            size: markdown.length,
+            type: FileType.DOCUMENT,
+            url: file_path,
+            owner: {
+              connect: user,
+            },
+            filename: new_slug,
+            path: file_path,
+          },
         },
 
         sections: {

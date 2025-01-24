@@ -47,7 +47,7 @@ export class DictionaryController {
 
   @Public()
   @Get('sound')
-  async getArticleContent(
+  async getWordPronunctiation(
     @Query('path') path: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
@@ -57,7 +57,7 @@ export class DictionaryController {
 
       res.set({
         'Content-Type': 'audio/mpeg',
-        'Content-Disposition': `inline; filename="${encodeURI(file_name)}"`,
+        'Content-Disposition': `inline; filename="${file_name.trim().normalize('NFD') + '.mp3'}"`,
       });
 
       return stream;
