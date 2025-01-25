@@ -109,6 +109,42 @@ export class DictionaryService {
     return this.prisma.partOfSpeech.findMany();
   }
 
+  async findWordById(id: string): Promise<Word | null> {
+    const word = await this.prisma.word.findFirst({
+      where: {
+        id: id,
+      },
+      include: {
+        pronunciation_audios: {
+          select: {
+            id: true,
+            format: true,
+            file: {
+              select: {
+                id: true,
+                url: true,
+              },
+            },
+          },
+        },
+        definitions: {
+          include: {
+            part_of_speech: true,
+            examples: true,
+            synonyms: true,
+            antonyms: true,
+          },
+        },
+      },
+    });
+
+    if (!word) {
+      throw new NotFoundException(`Word with id "${id}" not found`);
+    }
+
+    return word;
+  }
+
   async findOne(term: string): Promise<Word | null> {
     const word = await this.prisma.word.findFirst({
       where: {

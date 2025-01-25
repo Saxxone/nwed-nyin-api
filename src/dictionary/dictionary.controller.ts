@@ -86,6 +86,12 @@ export class DictionaryController {
   }
 
   @Public()
+  @Get('id/:id')
+  findWordById(@Param('id') id: string) {
+    return this.dictionaryService.findWordById(id);
+  }
+
+  @Public()
   @Get(':term')
   findOne(@Param('term') term: string) {
     return this.dictionaryService.findOne(term);
