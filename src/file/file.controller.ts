@@ -31,6 +31,7 @@ const allowedMimeTypes = new Set([
   'video/mp4',
   'audio/mpeg',
   'audio/mp3',
+  'audio/webm',
 ]);
 
 const storage = diskStorage({

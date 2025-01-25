@@ -56,8 +56,9 @@ export class DictionaryController {
       const stream = await this.fileService.streamStaticFile(path);
 
       res.set({
-        'Content-Type': 'audio/mpeg',
-        'Content-Disposition': `inline; filename="${file_name.trim().normalize('NFD') + '.mp3'}"`,
+        'Content-Type': 'audio/webm',
+        'Content-Disposition': `inline; filename="${file_name.trim().normalize('NFD') + '.webm'}"`,
+        'Accept-Ranges': 'bytes',
       });
 
       return stream;
