@@ -181,30 +181,6 @@ export class DictionaryService {
     return word;
   }
 
-  async finbById(id: string): Promise<Word | null> {
-    const word = await this.prisma.word.findUniqueOrThrow({
-      where: {
-        id: id,
-      },
-      include: {
-        definitions: {
-          include: {
-            part_of_speech: true,
-            examples: true,
-            synonyms: true,
-            antonyms: true,
-          },
-        },
-      },
-    });
-
-    if (!word) {
-      throw new NotFoundException(`Word with id "${id}" not found`);
-    }
-
-    return word;
-  }
-
   /**
    * Searches for words matching a given term.
    * @param term - The search term.
@@ -238,79 +214,88 @@ export class DictionaryService {
     updateDictionaryDto: UpdateDictionaryDto,
     email: string,
   ): Promise<Word> {
-    const { definitions, ...wordData } = updateDictionaryDto;
+    const { definitions, pronunciation_audios, ...wordData } =
+      updateDictionaryDto;
     try {
       const user = await this.userService.findUser(email);
-      return await this.prisma.$transaction(async (prisma) => {
-        const updated_word = await prisma.word.update({
-          where: { id },
-          data: {
-            ...wordData,
-            contributors: {
-              connect: user,
+
+      if (definitions && definitions.length > 0) {
+        return await this.prisma.$transaction(async (prisma) => {
+          const updated_word = await prisma.word.update({
+            where: { id },
+            data: {
+              ...wordData,
+              contributors: {
+                connect: user,
+              },
             },
-          },
-        });
-
-        if (definitions && definitions.length > 0) {
-          await prisma.example.deleteMany({
-            where: { definition: { word_id: id } },
-          });
-          await prisma.synonym.deleteMany({
-            where: { definition: { word_id: id } },
-          });
-          await prisma.antonym.deleteMany({
-            where: { definition: { word_id: id } },
           });
 
-          await prisma.definition.deleteMany({ where: { word_id: id } });
+          if (definitions && definitions.length > 0) {
+            await prisma.example.deleteMany({
+              where: { definition: { word_id: id } },
+            });
+            await prisma.synonym.deleteMany({
+              where: { definition: { word_id: id } },
+            });
+            await prisma.antonym.deleteMany({
+              where: { definition: { word_id: id } },
+            });
 
-          const created_definitions = await Promise.all(
-            definitions.map(async (definition) => {
-              const created_definition = await prisma.definition.create({
-                data: {
-                  meaning: definition.meaning,
-                  word_id: id,
-                  part_of_speech_id: definition.part_of_speech.id,
-                },
-              });
-              return created_definition;
-            }),
-          );
+            await prisma.definition.deleteMany({ where: { word_id: id } });
 
-          for (const [index, definition] of definitions.entries()) {
-            const created_definition = created_definitions[index];
+            const created_definitions = await Promise.all(
+              definitions.map(async (definition) => {
+                const created_definition = await prisma.definition.create({
+                  data: {
+                    meaning: definition.meaning,
+                    word_id: id,
+                    part_of_speech_id: definition.part_of_speech.id,
+                  },
+                });
+                return created_definition;
+              }),
+            );
 
-            if (definition.examples) {
-              await prisma.example.createMany({
-                data: definition.examples.map((example) => ({
-                  sentence: example.sentence,
-                  definition_id: created_definition.id,
-                })),
-              });
-            }
+            for (const [index, definition] of definitions.entries()) {
+              const created_definition = created_definitions[index];
 
-            if (definition.synonyms) {
-              await prisma.synonym.createMany({
-                data: definition.synonyms.map((synonym) => ({
-                  synonym: synonym.synonym,
-                  definition_id: created_definition.id,
-                })),
-              });
-            }
+              if (definition.examples) {
+                await prisma.example.createMany({
+                  data: definition.examples.map((example) => ({
+                    sentence: example.sentence,
+                    definition_id: created_definition.id,
+                  })),
+                });
+              }
 
-            if (definition.antonyms) {
-              await prisma.antonym.createMany({
-                data: definition.antonyms.map((antonym) => ({
-                  antonym: antonym.antonym,
-                  definition_id: created_definition.id,
-                })),
-              });
+              if (definition.synonyms) {
+                await prisma.synonym.createMany({
+                  data: definition.synonyms.map((synonym) => ({
+                    synonym: synonym.synonym,
+                    definition_id: created_definition.id,
+                  })),
+                });
+              }
+
+              if (definition.antonyms) {
+                await prisma.antonym.createMany({
+                  data: definition.antonyms.map((antonym) => ({
+                    antonym: antonym.antonym,
+                    definition_id: created_definition.id,
+                  })),
+                });
+              }
             }
           }
-        }
-        return updated_word;
-      });
+          return updated_word;
+        });
+      } else {
+        return await this.prisma.word.update({
+          where: { id },
+          data: { ...wordData, contributors: { connect: user } },
+        });
+      }
     } catch (error: any) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
@@ -321,7 +306,8 @@ export class DictionaryService {
           throw new NotFoundException('Related record not found.');
         }
       }
-      throw new BadRequestException('Failed to update word.');
+      console.error('Error updating word:', error);
+      throw new BadRequestException('Failed to update word.' + error);
     }
   }
 

@@ -16,6 +16,9 @@ export class UpdateDictionaryDto extends PartialType(CreateDictionaryDto) {
   term?: string;
 
   @IsOptional()
+  pronunciation_audios?: File[];
+
+  @IsOptional()
   @IsString()
   pronunciation?: string;
 
