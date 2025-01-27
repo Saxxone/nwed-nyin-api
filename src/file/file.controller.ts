@@ -125,7 +125,6 @@ export class FileController {
     if (req.files) {
       files = req.files;
     }
-    console.log('files', files);
     if (files.length === 0) throw new BadRequestException('No files found.');
 
     const compressed_files = await compressFiles(files);

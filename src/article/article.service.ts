@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { Article, FileType, Status } from '@prisma/client';
 import { promises as fs } from 'fs';
-import { console } from 'inspector';
 import { dirname, join } from 'path';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -82,10 +81,12 @@ export class ArticleService {
     try {
       const file_path = join(
         __dirname,
+        '../../../',
         process.env.FILE_BASE_URL,
         'articles',
         `${slug}.md`,
       );
+
       const dir = dirname(file_path);
 
       try {
@@ -111,7 +112,6 @@ export class ArticleService {
     create_article_dto: CreateArticleDto,
     email: string,
   ): Promise<Article> {
-    console.log(email);
     const {
       content,
       file: article_media_contents,
@@ -127,19 +127,12 @@ export class ArticleService {
     }
 
     return await this.prisma.$transaction(async (prisma) => {
-      console.log('0: Before starting');
       try {
-        console.log('1: Before finding user');
         const user = await this.userService.findUser(email);
-
-        console.log('2: User found:', user);
 
         if (!user) throw new UnauthorizedException('Login or create account');
 
-        console.log('5: Before extracting sections');
         const sections = this.extractSectionsFromMarkdown(content);
-
-        console.log('6: Sections extracted ');
 
         const article = await prisma.article.create({
           data: {
@@ -162,12 +155,12 @@ export class ArticleService {
                 mimetype: 'text/markdown',
                 size: content.length,
                 type: FileType.DOCUMENT,
-                url: file_path,
+                url: 'articles/' + slug + '.md', 
                 owner: {
                   connect: user,
                 },
                 filename: slug,
-                path: file_path,
+                path: 'articles/' + slug + '.md',
               },
             },
           },

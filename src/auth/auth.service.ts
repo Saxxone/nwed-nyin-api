@@ -1,19 +1,19 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { UserService } from '../user/user.service';
+import { JwtService } from '@nestjs/jwt';
+import { User } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import { JwtService } from '@nestjs/jwt';
-import { jwtConstants } from './constants';
-import { GoogleAuthUser, AuthUser } from './dto/sign-in.dto';
-import { User } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { Request } from 'express';
+import * as fs from 'fs';
 import * as https from 'https';
 import { join } from 'path';
-import * as fs from 'fs';
-import { CreateFedUserDto } from 'src/user/dto/create-user.dto';
 import { PrismaService } from 'src/prisma/prisma.service';
+import { CreateFedUserDto } from 'src/user/dto/create-user.dto';
+import { UserService } from '../user/user.service';
 import { JwtPayload } from './auth.guard';
-import { Request } from 'express';
+import { jwtConstants } from './constants';
+import { AuthUser, GoogleAuthUser } from './dto/sign-in.dto';
 
 const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -371,7 +371,7 @@ export class AuthService {
 
   private createImgPath() {
     const img_name = randomUUID() + '.jpg';
-    const destination = join(__dirname, '../../../../', 'media');
+    const destination = join(__dirname, '../../../', 'public', 'profiles');
     const media_base_url = process.env.FILE_BASE_URL;
     fs.mkdirSync(destination, { recursive: true });
     const img_path = `${media_base_url}${img_name}`;

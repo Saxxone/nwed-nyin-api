@@ -49,22 +49,23 @@ export class ArticleController {
   }
 
   @Public()
-  @Get(':slug')
+  @Get('article/:slug')
   findOne(@Param('slug') slug: string): Promise<Article> {
     return this.articleService.findOne(slug);
   }
 
   @Public()
-  @Get('markdown/:path')
+  @Get('markdown')
   getArticleContent(
     @Query('path') path: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     res.set({
       'Content-Type': 'text/markdown',
+      'Accept-Ranges': 'bytes',
       'Content-Disposition': `inline; filename="${path}.md"`,
     });
-    return this.fileService.streamStaticFile(path);
+    return this.fileService.streamStaticFile(path, 'articles');
   }
 
   @Patch(':id')

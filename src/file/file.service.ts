@@ -83,7 +83,7 @@ export class FileService {
     const saved_files: string[] = [];
 
     for (const file of files) {
-      const savedFile = await this.prisma.file.create({
+      const saved_file = await this.prisma.file.create({
         data: {
           filename: file.filename,
           originalname: file.originalname,
@@ -98,7 +98,7 @@ export class FileService {
           },
         } as Prisma.FileCreateInput,
       });
-      saved_files.push(savedFile.id);
+      saved_files.push(saved_file.id);
     }
 
     return saved_files;
@@ -142,9 +142,13 @@ export class FileService {
     );
   }
 
-  async streamStaticFile(path: string): Promise<StreamableFile> {
-    const public_path = join(__dirname, '..', '..', '..', path);
-    console.log(public_path);
+  async streamStaticFile(
+    path: string,
+    folder?: string,
+  ): Promise<StreamableFile> {
+    const public_path = folder
+      ? join(__dirname, '..', '..', '..', 'public', folder, path)
+      : join(__dirname, '..', '..', '..', path);
     try {
       await fs.access(public_path, constants.F_OK);
 
