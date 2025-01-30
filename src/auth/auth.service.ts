@@ -81,7 +81,7 @@ export class AuthService {
         }
 
         if (!user) {
-          throw new UnauthorizedException();
+          throw new UnauthorizedException('Account does not exist');
         }
         const { password, ...rest } = user;
 
@@ -124,6 +124,7 @@ export class AuthService {
     if (user) {
       return this.signInGoogle(token);
     } else {
+      throw new UnauthorizedException('Account creation currently disabled');
       try {
         const { url, file } = this.createImgPath();
         await this.downloadImage(payload.picture, file);
