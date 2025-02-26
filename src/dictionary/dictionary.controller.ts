@@ -38,10 +38,16 @@ export class DictionaryController {
 
   @Public()
   @Get()
-  findAll(@Query('skip') skip?: number, @Query('take') take?: number) {
+  findAll(
+    @Query('take') take?: number,
+    @Query('cursor') cursor?: string,
+  ): Promise<{
+    words: Word[];
+    totalCount: number;
+  }> {
     return this.dictionaryService.findAll({
-      skip: Number(skip) || 0,
-      take: Number(take) || 10,
+      take: Number(take) || 50,
+      cursor: cursor,
     });
   }
 
@@ -83,6 +89,26 @@ export class DictionaryController {
       return [];
     }
     return this.dictionaryService.search(term.trim().toLowerCase());
+  }
+
+  @Public()
+  @Get('jump')
+  async jump(
+    @Query('alphabet') alphabet: string,
+    @Query('cursor') cursor?: string,
+    @Query('take') take?: number,
+  ): Promise<{
+    words: Word[];
+    totalCount: number;
+  }> {
+    if (!alphabet) {
+      return this.findAll();
+    }
+    return this.dictionaryService.jump({
+      cursor,
+      alphabet: alphabet.trim().toLowerCase(),
+      take: Number(take) || 50,
+    });
   }
 
   @Public()

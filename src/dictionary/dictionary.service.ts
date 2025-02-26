@@ -18,6 +18,19 @@ export class DictionaryService {
     private readonly fileService: FileService,
   ) {}
 
+  private treatInvalidUndefinedNull(val: any) {
+    if (
+      val?.toLocaleLowerCase() === 'undefined' ||
+      val?.toLocaleLowerCase() === 'null' ||
+      val?.toLocaleLowerCase() === 'nan' ||
+      val?.toLocaleLowerCase() === 'false' ||
+      val?.toLocaleLowerCase() === 'true'
+    ) {
+      return undefined;
+    }
+    return val;
+  }
+
   async create(
     createDictionaryDto: CreateDictionaryDto,
     email: string,
@@ -66,16 +79,19 @@ export class DictionaryService {
   }
 
   async findAll({
-    skip,
     take,
+    cursor,
   }: {
-    skip: number;
-    take: number;
+      take?: number;
+      cursor?: string;
   }): Promise<{ words: Word[]; totalCount: number }> {
+    cursor = this.treatInvalidUndefinedNull(cursor);
+
     const [words, totalCount] = await this.prisma.$transaction([
       this.prisma.word.findMany({
-        skip,
         take,
+        skip: cursor ? 1 : 0,
+        ...(cursor ? { cursor: { id: cursor } } : {}),
         orderBy: { term: 'asc' },
         include: {
           pronunciation_audios: {
@@ -107,6 +123,57 @@ export class DictionaryService {
 
   async findAllPartsOfSpeech() {
     return this.prisma.partOfSpeech.findMany();
+  }
+
+  async jump({
+    alphabet,
+    cursor,
+    take,
+  }: {
+    alphabet: string;
+    cursor?: string;
+    take?: number;
+  }): Promise<{ words: Word[]; totalCount: number }> {
+    cursor = this.treatInvalidUndefinedNull(cursor);
+
+    const [words, totalCount] = await this.prisma.$transaction([
+      this.prisma.word.findMany({
+        ...(cursor ? { cursor: { id: cursor } } : {}),
+        skip: cursor ? 1 : 0,
+        take,
+        where: {
+          term: {
+            gte: alphabet.toLowerCase(),
+          },
+        },
+        orderBy: { term: 'asc' },
+        include: {
+          pronunciation_audios: {
+            select: {
+              id: true,
+              format: true,
+              file: {
+                select: {
+                  id: true,
+                  url: true,
+                },
+              },
+            },
+          },
+          definitions: {
+            include: {
+              part_of_speech: true,
+              examples: true,
+              synonyms: true,
+              antonyms: true,
+            },
+          },
+        },
+      }),
+      this.prisma.word.count(),
+    ]);
+
+    return { words, totalCount };
   }
 
   async findWordById(id: string): Promise<Word | null> {
