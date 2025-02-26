@@ -40,6 +40,7 @@ export class DictionaryController {
   @Get()
   findAll(
     @Query('take') take?: number,
+    @Query('skip') skip?: number,
     @Query('cursor') cursor?: string,
   ): Promise<{
     words: Word[];
@@ -47,6 +48,7 @@ export class DictionaryController {
   }> {
     return this.dictionaryService.findAll({
       take: Number(take) || 50,
+      skip: Number(skip) || 1,
       cursor: cursor,
     });
   }

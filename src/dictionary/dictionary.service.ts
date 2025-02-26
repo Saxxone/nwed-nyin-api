@@ -78,9 +78,11 @@ export class DictionaryService {
 
   async findAll({
     take,
+    skip,
     cursor,
   }: {
     take?: number;
+    skip?: number;
     cursor?: string;
   }): Promise<{ words: Word[]; totalCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
@@ -88,7 +90,7 @@ export class DictionaryService {
     const [words, totalCount] = await this.prisma.$transaction([
       this.prisma.word.findMany({
         take,
-        skip: cursor ? 1 : 0,
+        skip: skip,
         ...(cursor ? { cursor: { id: cursor } } : {}),
         orderBy: { term: 'asc' },
         include: {
