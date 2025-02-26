@@ -83,15 +83,6 @@ export class DictionaryController {
   }
 
   @Public()
-  @Get('search')
-  async search(@Query('term') term: string): Promise<Word[]> {
-    if (!term) {
-      return [];
-    }
-    return this.dictionaryService.search(term.trim().toLowerCase());
-  }
-
-  @Public()
   @Get('jump')
   async jump(
     @Query('alphabet') alphabet: string,
@@ -109,6 +100,15 @@ export class DictionaryController {
       alphabet: alphabet.trim().toLowerCase(),
       take: Number(take) || 50,
     });
+  }
+
+  @Public()
+  @Get('search')
+  async search(@Query('term') term: string): Promise<Word[]> {
+    if (!term) {
+      return [];
+    }
+    return this.dictionaryService.search(term.trim().toLowerCase());
   }
 
   @Public()
