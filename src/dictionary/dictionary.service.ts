@@ -22,9 +22,7 @@ export class DictionaryService {
     if (
       val?.toLocaleLowerCase() === 'undefined' ||
       val?.toLocaleLowerCase() === 'null' ||
-      val?.toLocaleLowerCase() === 'nan' ||
-      val?.toLocaleLowerCase() === 'false' ||
-      val?.toLocaleLowerCase() === 'true'
+      val?.toLocaleLowerCase() === 'nan'
     ) {
       return undefined;
     }
@@ -82,8 +80,8 @@ export class DictionaryService {
     take,
     cursor,
   }: {
-      take?: number;
-      cursor?: string;
+    take?: number;
+    cursor?: string;
   }): Promise<{ words: Word[]; totalCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
 
