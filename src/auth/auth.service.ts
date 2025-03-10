@@ -124,7 +124,8 @@ export class AuthService {
     if (user) {
       return this.signInGoogle(token);
     } else {
-      throw new UnauthorizedException('Account creation currently disabled');
+      //TODO enable/disable google signup with the line below
+      // throw new UnauthorizedException('Account creation currently disabled');
       try {
         const { url, file } = this.createImgPath();
         await this.downloadImage(payload.picture, file);
