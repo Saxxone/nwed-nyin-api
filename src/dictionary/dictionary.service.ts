@@ -84,10 +84,10 @@ export class DictionaryService {
     take?: number;
     skip?: number;
     cursor?: string;
-  }): Promise<{ words: Word[]; totalCount: number }> {
+  }): Promise<{ words: Word[]; totalCount: number, audioCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
 
-    const [words, totalCount] = await this.prisma.$transaction([
+    const [words, totalCount, audioCount] = await this.prisma.$transaction([
       this.prisma.word.findMany({
         take,
         skip: skip,
@@ -117,8 +117,9 @@ export class DictionaryService {
         },
       }),
       this.prisma.word.count(),
+      this.prisma.wordPronunciationAudio.count(),
     ]);
-    return { words, totalCount };
+    return { words, totalCount, audioCount };
   }
 
   async findAllPartsOfSpeech() {
@@ -133,10 +134,10 @@ export class DictionaryService {
     alphabet: string;
     cursor?: string;
     take?: number;
-  }): Promise<{ words: Word[]; totalCount: number }> {
+  }): Promise<{ words: Word[]; totalCount: number; audioCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
 
-    const [words, totalCount] = await this.prisma.$transaction([
+    const [words, totalCount, audioCount] = await this.prisma.$transaction([
       this.prisma.word.findMany({
         ...(cursor ? { cursor: { id: cursor } } : {}),
         skip: cursor ? 1 : 0,
@@ -171,9 +172,10 @@ export class DictionaryService {
         },
       }),
       this.prisma.word.count(),
+      this.prisma.wordPronunciationAudio.count(),
     ]);
 
-    return { words, totalCount };
+    return { words, totalCount, audioCount };
   }
 
   async findWordById(id: string): Promise<Word | null> {
