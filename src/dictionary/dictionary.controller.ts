@@ -48,7 +48,7 @@ export class DictionaryController {
   }> {
     return this.dictionaryService.findAll({
       take: Number(take) || 50,
-      skip: Number(skip) || 1,
+      skip: Number(skip),
       cursor: cursor,
     });
   }
