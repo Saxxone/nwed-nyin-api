@@ -159,13 +159,58 @@ export class ArticleService {
                 mimetype: 'text/markdown',
                 size: content.length,
                 type: FileType.DOCUMENT,
-                url: 'articles/' + slug + '.md', 
+                url: 'articles/' + slug + '.md',
                 owner: {
                   connect: user,
                 },
                 filename: slug,
                 path: 'articles/' + slug + '.md',
               },
+            },
+            metadata: article_data.metadata
+              ? { create: article_data.metadata }
+              : undefined,
+            categories: {
+              connectOrCreate:
+                article_data.categories?.map((category) => ({
+                  where: { name: category },
+                  create: { name: category },
+                })) || [],
+            },
+
+            tags: {
+              connectOrCreate:
+                article_data.tags?.map((tag) => ({
+                  where: { name: tag },
+                  create: { name: tag },
+                })) || [],
+            },
+
+            versions: {
+              create:
+                article_data.versions?.map((version) => ({
+                  version: version.version,
+                  content: version.content,
+                  created_by: email,
+                  article_id_version: {
+                    version: version.version,
+                  },
+                })) || [],
+            },
+
+            references: {
+              create:
+                article_data.references?.map((reference) => ({
+                  type: reference.type,
+                  citation: reference.citation,
+                  url: reference.url,
+                  doi: reference.doi,
+                  isbn: reference.isbn,
+                  authors: reference.authors,
+                  publisher: reference.publisher,
+                  year: reference.year,
+                  access_date: reference.access_date,
+                })) || [],
             },
           },
         });
@@ -247,14 +292,14 @@ export class ArticleService {
   // }
 
   async update(
-    slug: string,
+    id: string,
     update_article_dto: UpdateArticleDto,
     email: string,
   ): Promise<Article> {
-    const { ...article_data } = update_article_dto;
+    const { content, ...article_data } = update_article_dto;
 
     const existing_article = await this.prisma.article.findUnique({
-      where: { slug },
+      where: { id },
       include: {
         file: true,
       },
@@ -264,18 +309,19 @@ export class ArticleService {
 
     if (!user) throw new UnauthorizedException('Login or create account');
     if (!existing_article) {
-      throw new NotFoundException(`Article with slug ${slug} not found`);
+      throw new NotFoundException(`Article with id ${id} not found`);
     }
 
-    const markdown = article_data.content;
+    const markdown = content;
+
     const sections = this.extractSectionsFromMarkdown(markdown);
 
     const new_slug = await this.slugify(article_data.title);
 
-    const file_path = await this.writeMarkdownFile(slug, article_data.content);
+    const file_path = await this.writeMarkdownFile(new_slug, content);
 
     return this.prisma.article.update({
-      where: { slug },
+      where: { id },
       data: {
         ...article_data,
         slug: new_slug,
@@ -300,6 +346,48 @@ export class ArticleService {
         sections: {
           create: sections,
         },
+
+        categories: {
+          connectOrCreate:
+            article_data.categories?.map((category) => ({
+              where: { name: category },
+              create: { name: category },
+            })) || [],
+        },
+
+        tags: {
+          set: article_data.tags?.map((tag) => ({ name: tag })) || [],
+        },
+
+        references: {
+          create:
+            article_data.references?.map((reference) => ({
+              type: reference.type,
+              citation: reference.citation,
+              url: reference.url,
+              doi: reference.doi,
+              isbn: reference.isbn,
+              authors: reference.authors,
+              publisher: reference.publisher,
+              year: reference.year,
+              access_date: reference.access_date,
+            })) || [],
+        },
+
+        versions: {
+          set:
+            article_data.versions?.map((version) => ({
+              version: version.version,
+              article_id_version: {
+                article_id: id,
+                version: version.version,
+              },
+            })) || [],
+        },
+
+        metadata: article_data.metadata
+          ? { create: article_data.metadata }
+          : undefined,
 
         contributors: {
           connect: user,

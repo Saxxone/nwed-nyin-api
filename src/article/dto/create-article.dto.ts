@@ -48,9 +48,35 @@ export class CreateArticleDto {
   @ValidateNested({ each: true })
   @Type(() => MediaDto)
   file: MediaDto[] | null;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  categories?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ReferenceDto)
+  references?: ReferenceDto[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ArticleMetadata)
+  metadata?: ArticleMetadata;
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ArticleVersion)
+  versions?: ArticleVersion[];
 }
 
-// Separate DTO for References to make validation cleaner
 export class ReferenceDto {
   @IsEnum(ReferenceType)
   type: ReferenceType;
@@ -92,12 +118,14 @@ export class MediaDto {
   @IsEnum(FileType)
   type: FileType;
 
-  @IsUrl()
+  @IsString()
   url: string;
 
+  @IsOptional()
   @IsString()
   caption: string;
 
+  @IsOptional()
   @IsString()
   credit: string;
 

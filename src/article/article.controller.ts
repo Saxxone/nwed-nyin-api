@@ -68,12 +68,13 @@ export class ArticleController {
     return this.fileService.streamStaticFile(path, 'articles');
   }
 
-  @Patch(':id')
+  @Patch('update/:id')
   async update(
-    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('id') id: string,
     @Body() updateArticleDto: UpdateArticleDto,
     @Request() req: any,
   ): Promise<Article> {
+    console.log(req.user.sub, id);
     try {
       return await this.articleService.update(
         id,
@@ -88,7 +89,7 @@ export class ArticleController {
     }
   }
 
-  @Delete(':id')
+  @Delete('delete/:id')
   async remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<Article> {
     try {
       return await this.articleService.remove(id);
