@@ -22,7 +22,11 @@ export class ArticleService {
   ) {}
 
   private async slugify(title: string): Promise<string> {
-    let slug = title.toLowerCase().normalize('NFD').replace(/\s+/g, '-');
+    let slug = title
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
     let slugExists = await this.prisma.article.count({ where: { slug } });
     let counter = 1;
 
