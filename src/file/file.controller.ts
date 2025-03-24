@@ -13,39 +13,33 @@ import {
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
 import * as fs from 'fs';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
 import { DictionaryService } from 'src/dictionary/dictionary.service';
 import { UpdateFileDto } from './dto/update-file.dto';
-import { compressFiles } from './file.manager';
+import { compressFiles, fileNameFormatter, fileFilter } from './file.manager';
 import { FileService } from './file.service';
+import { join } from 'path';
 
-const destination = join(__dirname, '../../../', 'public/pronunciations');
+const pronunciation_destination = join(
+  __dirname,
+  '../../../',
+  'public/pronunciations',
+);
+const destination = join(__dirname, '../../../', 'public/files');
 
 fs.mkdirSync(destination, { recursive: true });
 
-const allowedMimeTypes = new Set([
-  'image/jpeg',
-  'image/heic',
-  'image/png',
-  'image/webp',
-  'video/mp4',
-  'audio/mpeg',
-  'audio/mp3',
-  'audio/webm',
-]);
-
-const storage = diskStorage({
-  destination,
-  filename: (req, file, cb) => {
-    const name = file.originalname.split('.')[0];
-    const extension = extname(file.originalname);
-    const randomName = Array(32)
-      .fill(null)
-      .map(() => Math.round(Math.random() * 16).toString(16))
-      .join('');
-    cb(null, `${name}-${randomName}${extension}`);
-  },
+const pronunciation_storage = diskStorage({
+  destination: pronunciation_destination,
+  filename: fileNameFormatter,
 });
+
+const file_storage = diskStorage({
+  destination,
+  filename: fileNameFormatter,
+});
+
+const FILE_SIZE_LIMIT = 1024 * 1024 * 20; // 20MB
+const FILE_COUNT_LIMIT = 4;
 
 @Controller('file')
 export class FileController {
@@ -56,24 +50,12 @@ export class FileController {
 
   @UseInterceptors(
     AnyFilesInterceptor({
-      storage: storage,
+      storage: file_storage,
       limits: {
-        fileSize: 1024 * 1024 * 20, // 20MB
-        files: 4,
+        fileSize: FILE_SIZE_LIMIT,
+        files: FILE_COUNT_LIMIT,
       },
-      fileFilter: (req, file, cb) => {
-        if (!allowedMimeTypes.has(file.mimetype)) {
-          return cb(
-            new BadRequestException(
-              `Unsupported file type. Allowed types are: ${Array.from(
-                allowedMimeTypes,
-              ).join(', ')}`,
-            ),
-            false,
-          );
-        }
-        cb(null, true);
-      },
+      fileFilter: fileFilter,
     }),
   )
   @Post('upload')
@@ -98,24 +80,12 @@ export class FileController {
 
   @UseInterceptors(
     AnyFilesInterceptor({
-      storage: storage,
+      storage: pronunciation_storage,
       limits: {
-        fileSize: 1024 * 1024 * 20, // 20MB
-        files: 4,
+        fileSize: FILE_SIZE_LIMIT,
+        files: FILE_COUNT_LIMIT,
       },
-      fileFilter: (req, file, cb) => {
-        if (!allowedMimeTypes.has(file.mimetype)) {
-          return cb(
-            new BadRequestException(
-              `Unsupported file type. Allowed types are: ${Array.from(
-                allowedMimeTypes,
-              ).join(', ')}`,
-            ),
-            false,
-          );
-        }
-        cb(null, true);
-      },
+      fileFilter: fileFilter,
     }),
   )
   @Post('upload-sound/:id')
@@ -149,6 +119,11 @@ export class FileController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.fileService.findOne(id);
+  }
+
+  @Post('file-urls')
+  getFileUrls(@Body() body: string[]) {
+    return this.fileService.getFilesUrls(body);
   }
 
   @Patch(':id')

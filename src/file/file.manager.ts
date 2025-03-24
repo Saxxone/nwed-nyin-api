@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { exec } from 'child_process';
 import { randomUUID } from 'crypto';
 import { constants } from 'fs';
@@ -7,6 +8,49 @@ import sharp from 'sharp';
 import { promisify } from 'util';
 
 const execPromise = promisify(exec);
+
+const allowedMimeTypes = new Set([
+  'image/jpeg',
+  'image/heic',
+  'image/png',
+  'image/webp',
+  'video/mp4',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/webm',
+]);
+
+export function fileNameFormatter(
+  req: Express.Request,
+  file: Express.Multer.File,
+  cb: (error: Error | null, filename: string) => void,
+) {
+  const name = file.originalname.split('.')[0];
+  const extension = extname(file.originalname);
+  const randomName = Array(32)
+    .fill(null)
+    .map(() => Math.round(Math.random() * 16).toString(16))
+    .join('');
+  cb(null, `${name}-${randomName}${extension}`);
+}
+
+export function fileFilter(
+  req: Express.Request,
+  file: Express.Multer.File,
+  cb: (error: Error | null, acceptFile: boolean) => void,
+) {
+  if (!allowedMimeTypes.has(file.mimetype)) {
+    return cb(
+      new BadRequestException(
+        `Unsupported file type. Allowed types are: ${Array.from(
+          allowedMimeTypes,
+        ).join(', ')}`,
+      ),
+      false,
+    );
+  }
+  cb(null, true);
+}
 
 export async function compressFiles(
   files: Array<Express.Multer.File>,
