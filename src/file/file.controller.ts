@@ -38,8 +38,8 @@ const file_storage = diskStorage({
   filename: fileNameFormatter,
 });
 
-const FILE_SIZE_LIMIT = 1024 * 1024 * 20; // 20MB
-const FILE_COUNT_LIMIT = 4;
+const FILE_SIZE_LIMIT = 1024 * 1024; // 1MB
+const FILE_COUNT_LIMIT = 1;
 
 @Controller('file')
 export class FileController {
