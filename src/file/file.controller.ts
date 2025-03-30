@@ -61,7 +61,7 @@ export class FileController {
   @Post('upload')
   async uploadFile(@Request() req: any) {
     let files: Array<Express.Multer.File> = [];
-    let compressed_fiiles: Array<Express.Multer.File> = [];
+    let compressed_files: Array<Express.Multer.File> = [];
 
     if (req.files) {
       files = req.files;
@@ -69,10 +69,10 @@ export class FileController {
 
     if (files.length === 0) throw new BadRequestException('No files found.');
 
-    compressed_fiiles = await compressFiles(files);
+    compressed_files = await compressFiles(files);
 
     return await this.fileService.create(
-      compressed_fiiles,
+      compressed_files,
       req.user.sub,
       'files',
     );
