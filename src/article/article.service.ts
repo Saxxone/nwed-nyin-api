@@ -43,39 +43,37 @@ export class ArticleService {
     return slug;
   }
 
-  private extractSectionsFromMarkdown(markdown: string) {
-    const heading_regex = /## (.+)\n/g; // Matches lines starting with "## " only H2 headings are sections
-    let match: RegExpExecArray;
-    let current_section = '';
+  private extractSectionsFromMarkdown(
+    markdown: string,
+  ): { title: string; content: string }[] {
+    const heading_regex = /^## (.*)$/gm; // Match start of line, capture title, multiline
     const sections = [];
 
-    while ((match = heading_regex.exec(markdown)) !== null) {
-      if (current_section) {
-        sections.push({
-          title: sections[sections.length - 1]?.title,
-          content: current_section.substring(0, 50),
-        });
-      }
+    // Find all H2 headings
+    const matches = Array.from(markdown.matchAll(heading_regex));
 
-      sections.push({ title: match[1], content: '' });
-      current_section = '';
-
-      const next_heading_index = heading_regex.lastIndex;
-      const next_match = heading_regex.exec(markdown);
-      const end_of_current_section = next_match
-        ? next_match.index
-        : markdown.length;
-      current_section = markdown.substring(
-        next_heading_index,
-        end_of_current_section,
-      );
+    if (matches.length === 0) {
+      // Handle case with no H2 headings if necessary
+      return [];
     }
 
-    sections.push({
-      title: sections[sections.length - 1]?.title,
-      content: current_section.substring(0, 50),
-    });
-    return sections.slice(1);
+    for (let i = 0; i < matches.length; i++) {
+      const match = matches[i];
+      const nextMatch = matches[i + 1];
+
+      const title = match[1].trim();
+      const startIndex = match.index + match[0].length; // Start content after the heading line
+      const endIndex = nextMatch ? nextMatch.index : markdown.length; // End content before the next heading or at the end of the string
+
+      const content = markdown.substring(startIndex, endIndex).trim();
+
+      sections.push({
+        title: title,
+        content: content.substring(0, 50) // Still creating substring, but maybe fewer/smaller ones overall
+      });
+    }
+
+    return sections;
   }
 
   private async writeMarkdownFile(
@@ -130,7 +128,7 @@ export class ArticleService {
       throw new NotImplementedException('Error creating markdown file');
     }
 
-    return await this.prisma.$transaction(async (prisma) => {
+    return this.prisma.$transaction(async (prisma) => {
       try {
         const user = await this.userService.findUser(email);
 
@@ -138,7 +136,7 @@ export class ArticleService {
 
         const sections = this.extractSectionsFromMarkdown(content);
 
-        const article = await prisma.article.create({
+        return await prisma.article.create({
           data: {
             ...article_data,
             slug: slug,
@@ -214,8 +212,6 @@ export class ArticleService {
             },
           },
         });
-
-        return article;
       } catch (error) {
         throw new NotImplementedException(`error publishing post ${error}`);
       }
