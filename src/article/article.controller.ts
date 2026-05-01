@@ -49,6 +49,20 @@ export class ArticleController {
   }
 
   @Public()
+  @Get('search')
+  search(
+    @Query('term') term: string,
+    @Query('skip') skip?: number,
+    @Query('take') take?: number,
+  ): Promise<Article[]> {
+    return this.articleService.search({
+      term: term?.trim() || '',
+      skip: Number(skip) || 0,
+      take: Number(take) || 10,
+    });
+  }
+
+  @Public()
   @Get('article/:slug')
   findOne(@Param('slug') slug: string): Promise<Article> {
     return this.articleService.findOne(slug);

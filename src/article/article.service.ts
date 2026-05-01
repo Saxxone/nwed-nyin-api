@@ -69,7 +69,7 @@ export class ArticleService {
 
       sections.push({
         title: title,
-        content: content.substring(0, 50) // Still creating substring, but maybe fewer/smaller ones overall
+        content: content.substring(0, 50), // Still creating substring, but maybe fewer/smaller ones overall
       });
     }
 
@@ -222,6 +222,69 @@ export class ArticleService {
     return this.prisma.article.findMany({
       where: {
         status: Status.PUBLISHED,
+      },
+      skip,
+      take,
+      orderBy: {
+        created_at: 'desc',
+      },
+      include: {
+        categories: true,
+        tags: true,
+        references: true,
+        file: true,
+        metadata: true,
+        versions: true,
+        contributors: true,
+      },
+    });
+  }
+
+  search({
+    term,
+    skip,
+    take,
+  }: {
+    term: string;
+    skip: number;
+    take: number;
+  }): Promise<Article[]> {
+    const search_term = term.trim();
+
+    if (!search_term) return this.findAll({ skip, take });
+
+    return this.prisma.article.findMany({
+      where: {
+        status: Status.PUBLISHED,
+        OR: [
+          { title: { contains: search_term } },
+          { summary: { contains: search_term } },
+          { slug: { contains: search_term } },
+          {
+            tags: {
+              some: {
+                name: { contains: search_term },
+              },
+            },
+          },
+          {
+            categories: {
+              some: {
+                name: { contains: search_term },
+              },
+            },
+          },
+          {
+            sections: {
+              some: {
+                OR: [
+                  { title: { contains: search_term } },
+                  { content: { contains: search_term } },
+                ],
+              },
+            },
+          },
+        ],
       },
       skip,
       take,
