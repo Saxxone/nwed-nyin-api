@@ -115,11 +115,19 @@ export class ReferenceDto {
 }
 
 export class MediaDto {
+  @IsOptional()
+  @IsString()
+  id?: string;
+
   @IsEnum(FileType)
   type: FileType;
 
   @IsString()
   url: string;
+
+  @IsOptional()
+  @IsString()
+  path?: string;
 
   @IsOptional()
   @IsString()
@@ -136,6 +144,10 @@ export class MediaDto {
   @IsOptional()
   @IsString()
   mime_type: string | null;
+
+  @IsOptional()
+  @IsString()
+  mimetype?: string | null;
 
   @IsOptional()
   @IsInt()

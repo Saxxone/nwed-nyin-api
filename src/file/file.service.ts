@@ -104,9 +104,15 @@ export class FileService {
     return saved_files;
   }
 
-  async getFilesUrls(
-    fileIds: string[],
-  ): Promise<{ url: string; type: string }[]> {
+  async getFilesUrls(fileIds: string[]): Promise<
+    {
+      id: string;
+      path: string;
+      url: string;
+      type: FileType;
+      mimetype: string;
+    }[]
+  > {
     return await Promise.all(
       fileIds.map(async (fileId) => {
         const file = await this.prisma.file.findUnique({
@@ -120,7 +126,13 @@ export class FileService {
           throw new NotFoundException('File not found');
         }
 
-        return { url: file.url, type: file.type };
+        return {
+          id: file.id,
+          path: file.path,
+          url: file.url,
+          type: file.type,
+          mimetype: file.mimetype,
+        };
       }),
     );
   }

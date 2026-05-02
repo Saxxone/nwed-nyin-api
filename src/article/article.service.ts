@@ -4,9 +4,10 @@ import {
   NotImplementedException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Article, FileType, Status } from '@prisma/client';
+import { Article, File, FileType, Status } from '@prisma/client';
+import { existsSync } from 'fs';
 import { promises as fs } from 'fs';
-import { dirname, join } from 'path';
+import { basename, dirname, isAbsolute, join } from 'path';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from 'src/user/user.service';
@@ -20,6 +21,127 @@ export class ArticleService {
     private readonly userService: UserService,
     private readonly fileService: FileService,
   ) {}
+
+  private getArticleMediaFileIds(files?: CreateArticleDto['file']): string[] {
+    return Array.from(
+      new Set(
+        (files ?? [])
+          .map((file) => file?.id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    );
+  }
+
+  private hasImageFile(files?: File[]): boolean {
+    return (
+      files?.some((file) => {
+        return (
+          file.type === FileType.IMAGE || file.mimetype?.startsWith('image/')
+        );
+      }) ?? false
+    );
+  }
+
+  private extractImageUrlsFromMarkdown(markdown: string): string[] {
+    const image_urls = new Set<string>();
+    const markdown_image_regex =
+      /!\[[^\]]*]\(\s*<?([^)\s>]+)>?(?:\s+["'][^"']*["'])?\s*\)/g;
+    const html_image_regex =
+      /<img\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi;
+
+    for (const match of markdown.matchAll(markdown_image_regex)) {
+      image_urls.add(match[1]);
+    }
+
+    for (const match of markdown.matchAll(html_image_regex)) {
+      image_urls.add(match[1] || match[2] || match[3]);
+    }
+
+    return Array.from(image_urls);
+  }
+
+  private resolveMarkdownPath(body?: string | null): string | null {
+    if (!body) return null;
+
+    if (isAbsolute(body) && existsSync(body)) {
+      return body;
+    }
+
+    const normalized_body = body
+      .replace(/^\/+/, '')
+      .replace(/^public\/+/, '')
+      .replace(/^articles\/+/, '');
+
+    return join(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      'public',
+      'articles',
+      normalized_body,
+    );
+  }
+
+  private createFallbackImageFile(
+    article: Article,
+    image_url: string,
+    index: number,
+  ): File {
+    const filename =
+      basename(image_url.split(/[?#]/)[0]) || `${article.slug}-${index + 1}`;
+    const now = new Date();
+
+    return {
+      id: `markdown-image-${article.id}-${index}`,
+      originalname: filename,
+      filename,
+      size: 0,
+      type: FileType.IMAGE,
+      url: image_url,
+      path: image_url,
+      mimetype: 'image/*',
+      caption: null,
+      credit: null,
+      alt_text: null,
+      status: Status.UPLOADED,
+      owner_id: article.created_by ?? '',
+      article_id: article.id,
+      created_at: now,
+      updated_at: now,
+      deleted_at: null,
+    };
+  }
+
+  private async withMarkdownImageFallbacks<
+    T extends Article & { file?: File[] },
+  >(articles: T[]): Promise<T[]> {
+    return Promise.all(
+      articles.map(async (article) => {
+        if (this.hasImageFile(article.file)) return article;
+
+        const markdown_path = this.resolveMarkdownPath(article.body);
+        if (!markdown_path) return article;
+
+        try {
+          const markdown = await fs.readFile(markdown_path, 'utf8');
+          const image_files = this.extractImageUrlsFromMarkdown(markdown).map(
+            (image_url, index) =>
+              this.createFallbackImageFile(article, image_url, index),
+          );
+
+          if (!image_files.length) return article;
+
+          return {
+            ...article,
+            file: [...(article.file ?? []), ...image_files],
+          };
+        } catch {
+          return article;
+        }
+      }),
+    );
+  }
 
   private async slugify(title: string): Promise<string> {
     let slug = title
@@ -135,8 +257,22 @@ export class ArticleService {
         if (!user) throw new UnauthorizedException('Login or create account');
 
         const sections = this.extractSectionsFromMarkdown(content);
+        const media_file_ids = this.getArticleMediaFileIds(
+          article_media_contents,
+        );
+        const owned_media_files = media_file_ids.length
+          ? await prisma.file.findMany({
+              where: {
+                id: { in: media_file_ids },
+                owner_id: user.id,
+                type: { in: [FileType.IMAGE, FileType.VIDEO, FileType.AUDIO] },
+              },
+              select: { id: true },
+            })
+          : [];
+        const owned_media_file_ids = owned_media_files.map((file) => file.id);
 
-        return await prisma.article.create({
+        const article = await prisma.article.create({
           data: {
             ...article_data,
             slug: slug,
@@ -164,6 +300,7 @@ export class ArticleService {
                 filename: slug,
                 path: 'articles/' + slug + '.md',
               },
+              connect: owned_media_file_ids.map((id) => ({ id })),
             },
             metadata: article_data.metadata
               ? { create: article_data.metadata }
@@ -212,14 +349,32 @@ export class ArticleService {
             },
           },
         });
+
+        if (owned_media_file_ids.length) {
+          await prisma.file.updateMany({
+            where: {
+              id: { in: owned_media_file_ids },
+              owner_id: user.id,
+            },
+            data: { status: Status.UPLOADED },
+          });
+        }
+
+        return article;
       } catch (error) {
         throw new NotImplementedException(`error publishing post ${error}`);
       }
     });
   }
 
-  findAll({ skip, take }: { skip: number; take: number }): Promise<Article[]> {
-    return this.prisma.article.findMany({
+  async findAll({
+    skip,
+    take,
+  }: {
+    skip: number;
+    take: number;
+  }): Promise<Article[]> {
+    const articles = await this.prisma.article.findMany({
       where: {
         status: Status.PUBLISHED,
       },
@@ -238,9 +393,11 @@ export class ArticleService {
         contributors: true,
       },
     });
+
+    return this.withMarkdownImageFallbacks(articles);
   }
 
-  search({
+  async search({
     term,
     skip,
     take,
@@ -253,7 +410,7 @@ export class ArticleService {
 
     if (!search_term) return this.findAll({ skip, take });
 
-    return this.prisma.article.findMany({
+    const articles = await this.prisma.article.findMany({
       where: {
         status: Status.PUBLISHED,
         OR: [
@@ -301,6 +458,8 @@ export class ArticleService {
         contributors: true,
       },
     });
+
+    return this.withMarkdownImageFallbacks(articles);
   }
 
   async findOne(slug: string): Promise<Article> {
@@ -319,7 +478,10 @@ export class ArticleService {
     if (!article) {
       throw new NotFoundException(`Article with slug ${slug} not found`);
     }
-    return article;
+    const [article_with_fallbacks] = await this.withMarkdownImageFallbacks([
+      article,
+    ]);
+    return article_with_fallbacks;
   }
 
   // async getMarkdown(path: string): Promise<StreamableFile> {
@@ -355,7 +517,11 @@ export class ArticleService {
     update_article_dto: UpdateArticleDto,
     email: string,
   ): Promise<Article> {
-    const { content, ...article_data } = update_article_dto;
+    const {
+      content,
+      file: article_media_contents,
+      ...article_data
+    } = update_article_dto;
 
     const existing_article = await this.prisma.article.findUnique({
       where: { id },
@@ -374,12 +540,24 @@ export class ArticleService {
     const markdown = content;
 
     const sections = this.extractSectionsFromMarkdown(markdown);
+    const media_file_ids = this.getArticleMediaFileIds(article_media_contents);
+    const owned_media_files = media_file_ids.length
+      ? await this.prisma.file.findMany({
+          where: {
+            id: { in: media_file_ids },
+            owner_id: user.id,
+            type: { in: [FileType.IMAGE, FileType.VIDEO, FileType.AUDIO] },
+          },
+          select: { id: true },
+        })
+      : [];
+    const owned_media_file_ids = owned_media_files.map((file) => file.id);
 
     const new_slug = await this.slugify(article_data.title);
 
     const file_path = await this.writeMarkdownFile(new_slug, content);
 
-    return this.prisma.article.update({
+    const article = await this.prisma.article.update({
       where: { id },
       data: {
         ...article_data,
@@ -400,6 +578,7 @@ export class ArticleService {
             filename: new_slug,
             path: file_path,
           },
+          connect: owned_media_file_ids.map((file_id) => ({ id: file_id })),
         },
 
         sections: {
@@ -462,6 +641,18 @@ export class ArticleService {
         contributors: true,
       },
     });
+
+    if (owned_media_file_ids.length) {
+      await this.prisma.file.updateMany({
+        where: {
+          id: { in: owned_media_file_ids },
+          owner_id: user.id,
+        },
+        data: { status: Status.UPLOADED },
+      });
+    }
+
+    return article;
   }
 
   async remove(id: string): Promise<Article> {

@@ -15,8 +15,8 @@ describe('AppController', () => {
   });
 
   describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Nwed nyin API!');
+    it('returns the current API health message', () => {
+      expect(appController.getHello()).toBe('Nwed nyin API! v1');
     });
   });
 });
