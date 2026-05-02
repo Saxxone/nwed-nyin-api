@@ -1,22 +1,26 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { UserController } from './user.controller';
 import { UserService } from './user.service';
+
+type AnyMock = Mock<(...args: any[]) => any>;
 
 describe('UserController', () => {
   let controller: UserController;
   let userService: {
-    createUser: jest.Mock;
-    findUser: jest.Mock;
-    updateUser: jest.Mock;
-    deleteUser: jest.Mock;
+    createUser: AnyMock;
+    findUser: AnyMock;
+    updateUser: AnyMock;
+    deleteUser: AnyMock;
   };
 
   beforeEach(async () => {
     userService = {
-      createUser: jest.fn(),
-      findUser: jest.fn(),
-      updateUser: jest.fn(),
-      deleteUser: jest.fn(),
+      createUser: jest.fn<(...args: any[]) => any>(),
+      findUser: jest.fn<(...args: any[]) => any>(),
+      updateUser: jest.fn<(...args: any[]) => any>(),
+      deleteUser: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

@@ -1,39 +1,43 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { DictionaryController } from './dictionary.controller';
 import { DictionaryService } from './dictionary.service';
-import { FileService } from 'src/file/file.service';
+import { FileService } from '../file/file.service';
+
+type AnyMock = Mock<(...args: any[]) => any>;
 
 describe('DictionaryController', () => {
   let controller: DictionaryController;
   let dictionaryService: {
-    create: jest.Mock;
-    findAll: jest.Mock;
-    findAllPartsOfSpeech: jest.Mock;
-    jump: jest.Mock;
-    search: jest.Mock;
-    findWordById: jest.Mock;
-    findOne: jest.Mock;
-    update: jest.Mock;
-    remove: jest.Mock;
+    create: AnyMock;
+    findAll: AnyMock;
+    findAllPartsOfSpeech: AnyMock;
+    jump: AnyMock;
+    search: AnyMock;
+    findWordById: AnyMock;
+    findOne: AnyMock;
+    update: AnyMock;
+    remove: AnyMock;
   };
   let fileService: {
-    streamStaticFile: jest.Mock;
+    streamStaticFile: AnyMock;
   };
 
   beforeEach(async () => {
     dictionaryService = {
-      create: jest.fn(),
-      findAll: jest.fn(),
-      findAllPartsOfSpeech: jest.fn(),
-      jump: jest.fn(),
-      search: jest.fn(),
-      findWordById: jest.fn(),
-      findOne: jest.fn(),
-      update: jest.fn(),
-      remove: jest.fn(),
+      create: jest.fn<(...args: any[]) => any>(),
+      findAll: jest.fn<(...args: any[]) => any>(),
+      findAllPartsOfSpeech: jest.fn<(...args: any[]) => any>(),
+      jump: jest.fn<(...args: any[]) => any>(),
+      search: jest.fn<(...args: any[]) => any>(),
+      findWordById: jest.fn<(...args: any[]) => any>(),
+      findOne: jest.fn<(...args: any[]) => any>(),
+      update: jest.fn<(...args: any[]) => any>(),
+      remove: jest.fn<(...args: any[]) => any>(),
     };
     fileService = {
-      streamStaticFile: jest.fn(),
+      streamStaticFile: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

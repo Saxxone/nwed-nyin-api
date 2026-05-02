@@ -1,8 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import { NotFoundException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { UserService } from './user.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+type AnyMock = Mock<(...args: any[]) => any>;
 
 jest.mock('bcrypt', () => ({
   hash: jest.fn(),
@@ -12,20 +16,20 @@ describe('UserService', () => {
   let service: UserService;
   let prisma: {
     user: {
-      create: jest.Mock;
-      findFirst: jest.Mock;
-      update: jest.Mock;
-      delete: jest.Mock;
+      create: AnyMock;
+      findFirst: AnyMock;
+      update: AnyMock;
+      delete: AnyMock;
     };
   };
 
   beforeEach(async () => {
     prisma = {
       user: {
-        create: jest.fn(),
-        findFirst: jest.fn(),
-        update: jest.fn(),
-        delete: jest.fn(),
+        create: jest.fn<(...args: any[]) => any>(),
+        findFirst: jest.fn<(...args: any[]) => any>(),
+        update: jest.fn<(...args: any[]) => any>(),
+        delete: jest.fn<(...args: any[]) => any>(),
       },
     };
 
@@ -46,7 +50,7 @@ describe('UserService', () => {
 
   it('creates users with hashed passwords and default editor role', async () => {
     process.env.DEFAULT_PROFILE_IMG = '/profiles/default.jpg';
-    (bcrypt.hash as jest.Mock).mockResolvedValue('hashed-password');
+    (bcrypt.hash as AnyMock).mockResolvedValue('hashed-password');
     const user = { id: 'user-1', email: 'editor@example.com' };
     prisma.user.create.mockResolvedValue(user);
 

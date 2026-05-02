@@ -1,28 +1,32 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { FileService } from './file.service';
 import { UserService } from '../user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
 
+type AnyMock = Mock<(...args: any[]) => any>;
+
 describe('FileService', () => {
   let service: FileService;
   let userService: {
-    findUser: jest.Mock;
+    findUser: AnyMock;
   };
   let prisma: {
     file: {
-      create: jest.Mock;
-      findUnique: jest.Mock;
+      create: AnyMock;
+      findUnique: AnyMock;
     };
   };
 
   beforeEach(async () => {
     userService = {
-      findUser: jest.fn(),
+      findUser: jest.fn<(...args: any[]) => any>(),
     };
     prisma = {
       file: {
-        create: jest.fn(),
-        findUnique: jest.fn(),
+        create: jest.fn<(...args: any[]) => any>(),
+        findUnique: jest.fn<(...args: any[]) => any>(),
       },
     };
 

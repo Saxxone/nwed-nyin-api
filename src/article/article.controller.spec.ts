@@ -1,33 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { ArticleController } from './article.controller';
 import { ArticleService } from './article.service';
-import { FileService } from 'src/file/file.service';
+import { FileService } from '../file/file.service';
+
+type AnyMock = Mock<(...args: any[]) => any>;
 
 describe('ArticleController', () => {
   let controller: ArticleController;
   let articleService: {
-    create: jest.Mock;
-    findAll: jest.Mock;
-    search: jest.Mock;
-    findOne: jest.Mock;
-    update: jest.Mock;
-    remove: jest.Mock;
+    create: AnyMock;
+    findAll: AnyMock;
+    search: AnyMock;
+    findOne: AnyMock;
+    update: AnyMock;
+    remove: AnyMock;
   };
   let fileService: {
-    streamStaticFile: jest.Mock;
+    streamStaticFile: AnyMock;
   };
 
   beforeEach(async () => {
     articleService = {
-      create: jest.fn(),
-      findAll: jest.fn(),
-      search: jest.fn(),
-      findOne: jest.fn(),
-      update: jest.fn(),
-      remove: jest.fn(),
+      create: jest.fn<(...args: any[]) => any>(),
+      findAll: jest.fn<(...args: any[]) => any>(),
+      search: jest.fn<(...args: any[]) => any>(),
+      findOne: jest.fn<(...args: any[]) => any>(),
+      update: jest.fn<(...args: any[]) => any>(),
+      remove: jest.fn<(...args: any[]) => any>(),
     };
     fileService = {
-      streamStaticFile: jest.fn(),
+      streamStaticFile: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

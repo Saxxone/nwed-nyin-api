@@ -1,33 +1,37 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthGuard } from './auth.guard';
-import { UserService } from 'src/user/user.service';
+import { UserService } from '../user/user.service';
+
+type AnyMock = Mock<(...args: any[]) => any>;
 
 describe('AuthController', () => {
   let controller: AuthController;
   let authService: {
-    signIn: jest.Mock;
-    refresh: jest.Mock;
-    signInGoogle: jest.Mock;
-    signUpGoogle: jest.Mock;
-    signOut: jest.Mock;
+    signIn: AnyMock;
+    refresh: AnyMock;
+    signInGoogle: AnyMock;
+    signUpGoogle: AnyMock;
+    signOut: AnyMock;
   };
   let userService: {
-    findUser: jest.Mock;
+    findUser: AnyMock;
   };
 
   beforeEach(async () => {
     authService = {
-      signIn: jest.fn(),
-      refresh: jest.fn(),
-      signInGoogle: jest.fn(),
-      signUpGoogle: jest.fn(),
-      signOut: jest.fn(),
+      signIn: jest.fn<(...args: any[]) => any>(),
+      refresh: jest.fn<(...args: any[]) => any>(),
+      signInGoogle: jest.fn<(...args: any[]) => any>(),
+      signUpGoogle: jest.fn<(...args: any[]) => any>(),
+      signOut: jest.fn<(...args: any[]) => any>(),
     };
     userService = {
-      findUser: jest.fn(),
+      findUser: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

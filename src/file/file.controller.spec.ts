@@ -1,31 +1,35 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { FileController } from './file.controller';
 import { FileService } from './file.service';
 import { DictionaryService } from '../dictionary/dictionary.service';
 
+type AnyMock = Mock<(...args: any[]) => any>;
+
 describe('FileController', () => {
   let controller: FileController;
   let fileService: {
-    findAll: jest.Mock;
-    findOne: jest.Mock;
-    getFilesUrls: jest.Mock;
-    update: jest.Mock;
-    remove: jest.Mock;
+    findAll: AnyMock;
+    findOne: AnyMock;
+    getFilesUrls: AnyMock;
+    update: AnyMock;
+    remove: AnyMock;
   };
   let dictionaryService: {
-    updateWordPronunciation: jest.Mock;
+    updateWordPronunciation: AnyMock;
   };
 
   beforeEach(async () => {
     fileService = {
-      findAll: jest.fn(),
-      findOne: jest.fn(),
-      getFilesUrls: jest.fn(),
-      update: jest.fn(),
-      remove: jest.fn(),
+      findAll: jest.fn<(...args: any[]) => any>(),
+      findOne: jest.fn<(...args: any[]) => any>(),
+      getFilesUrls: jest.fn<(...args: any[]) => any>(),
+      update: jest.fn<(...args: any[]) => any>(),
+      remove: jest.fn<(...args: any[]) => any>(),
     };
     dictionaryService = {
-      updateWordPronunciation: jest.fn(),
+      updateWordPronunciation: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

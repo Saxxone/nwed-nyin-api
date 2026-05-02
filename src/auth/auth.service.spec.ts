@@ -2,9 +2,13 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import { UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import type { Mock } from 'jest-mock';
 import { AuthService } from './auth.service';
 import { UserService } from '../user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
+
+type AnyMock = Mock<(...args: any[]) => any>;
 
 jest.mock('bcrypt', () => ({
   compare: jest.fn(),
@@ -14,33 +18,33 @@ jest.mock('bcrypt', () => ({
 describe('AuthService', () => {
   let service: AuthService;
   let userService: {
-    findUser: jest.Mock;
+    findUser: AnyMock;
   };
   let jwtService: {
-    signAsync: jest.Mock;
-    verifyAsync: jest.Mock;
-    decode: jest.Mock;
+    signAsync: AnyMock;
+    verifyAsync: AnyMock;
+    decode: AnyMock;
   };
   let prisma: {
     authToken: {
-      upsert: jest.Mock;
-      findUnique: jest.Mock;
+      upsert: AnyMock;
+      findUnique: AnyMock;
     };
   };
 
   beforeEach(async () => {
     userService = {
-      findUser: jest.fn(),
+      findUser: jest.fn<(...args: any[]) => any>(),
     };
     jwtService = {
-      signAsync: jest.fn(),
-      verifyAsync: jest.fn(),
-      decode: jest.fn(),
+      signAsync: jest.fn<(...args: any[]) => any>(),
+      verifyAsync: jest.fn<(...args: any[]) => any>(),
+      decode: jest.fn<(...args: any[]) => any>(),
     };
     prisma = {
       authToken: {
-        upsert: jest.fn(),
-        findUnique: jest.fn(),
+        upsert: jest.fn<(...args: any[]) => any>(),
+        findUnique: jest.fn<(...args: any[]) => any>(),
       },
     };
 
@@ -68,7 +72,7 @@ describe('AuthService', () => {
       password: 'hashed-password',
     };
     userService.findUser.mockResolvedValue(user);
-    (bcrypt.compare as jest.Mock).mockResolvedValue(true);
+    (bcrypt.compare as AnyMock).mockResolvedValue(true);
     jest.spyOn(service, 'generateTokens').mockResolvedValue({
       access_token: 'access-token',
       refresh_token: 'refresh-token',
@@ -95,7 +99,7 @@ describe('AuthService', () => {
       email: 'editor@example.com',
       password: 'hashed-password',
     });
-    (bcrypt.compare as jest.Mock).mockResolvedValue(false);
+    (bcrypt.compare as AnyMock).mockResolvedValue(false);
 
     await expect(service.signIn('editor@example.com', 'wrong')).rejects.toThrow(
       UnauthorizedException,

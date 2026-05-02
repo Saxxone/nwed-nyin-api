@@ -15,9 +15,9 @@ import {
 } from '@nestjs/common';
 import { Article } from '@prisma/client';
 import { Response } from 'express';
-import { Public } from 'src/auth/auth.guard';
-import { FileService } from 'src/file/file.service';
-import { ArticleService } from './article.service';
+import { Public } from '../auth/auth.guard';
+import { FileService } from '../file/file.service';
+import { ArticleService, PublicArticle } from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
@@ -32,7 +32,7 @@ export class ArticleController {
   create(
     @Body() createArticleDto: CreateArticleDto,
     @Request() req: any,
-  ): Promise<Article> {
+  ): Promise<PublicArticle> {
     return this.articleService.create(createArticleDto, req.user.sub);
   }
 
@@ -41,7 +41,7 @@ export class ArticleController {
   findAll(
     @Query('skip') skip?: number,
     @Query('take') take?: number,
-  ): Promise<Article[]> {
+  ): Promise<PublicArticle[]> {
     return this.articleService.findAll({
       skip: Number(skip) || 0,
       take: Number(take) || 10,
@@ -54,7 +54,7 @@ export class ArticleController {
     @Query('term') term: string,
     @Query('skip') skip?: number,
     @Query('take') take?: number,
-  ): Promise<Article[]> {
+  ): Promise<PublicArticle[]> {
     return this.articleService.search({
       term: term?.trim() || '',
       skip: Number(skip) || 0,
@@ -64,7 +64,7 @@ export class ArticleController {
 
   @Public()
   @Get('article/:slug')
-  findOne(@Param('slug') slug: string): Promise<Article> {
+  findOne(@Param('slug') slug: string): Promise<PublicArticle> {
     return this.articleService.findOne(slug);
   }
 
@@ -87,7 +87,7 @@ export class ArticleController {
     @Param('id') id: string,
     @Body() updateArticleDto: UpdateArticleDto,
     @Request() req: any,
-  ): Promise<Article> {
+  ): Promise<PublicArticle> {
     console.log(req.user.sub, id);
     try {
       return await this.articleService.update(

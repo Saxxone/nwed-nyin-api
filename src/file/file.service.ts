@@ -9,8 +9,8 @@ import { File as FileModel, FileType, Prisma, Status } from '@prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
 import { join } from 'path';
-import { UserService } from 'src/user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserService } from '../user/user.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 
 @Injectable()
