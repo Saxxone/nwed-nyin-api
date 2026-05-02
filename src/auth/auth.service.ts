@@ -7,7 +7,7 @@ import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import * as fs from 'fs';
 import * as https from 'https';
-import { join } from 'path';
+import { getPublicStoragePath, getPublicUrl } from '../config/storage';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateFedUserDto } from 'src/user/dto/create-user.dto';
 import { UserService } from '../user/user.service';
@@ -373,11 +373,10 @@ export class AuthService {
 
   private createImgPath() {
     const img_name = randomUUID() + '.jpg';
-    const destination = join(__dirname, '../../../', 'public', 'profiles');
-    const media_base_url = process.env.FILE_BASE_URL;
+    const destination = getPublicStoragePath('profiles');
     fs.mkdirSync(destination, { recursive: true });
-    const img_path = `${media_base_url}${img_name}`;
-    return { url: img_path, file: join(destination, img_name) };
+    const img_path = getPublicUrl('profiles', img_name);
+    return { url: img_path, file: getPublicStoragePath('profiles', img_name) };
   }
 
   private async downloadImage(url: string, filepath: string): Promise<void> {

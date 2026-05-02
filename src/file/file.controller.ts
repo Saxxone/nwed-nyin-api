@@ -17,16 +17,13 @@ import { DictionaryService } from 'src/dictionary/dictionary.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 import { compressFiles, fileNameFormatter, fileFilter } from './file.manager';
 import { FileService } from './file.service';
-import { join } from 'path';
+import { getPublicStoragePath } from '../config/storage';
 
-const pronunciation_destination = join(
-  __dirname,
-  '../../../',
-  'public/pronunciations',
-);
-const destination = join(__dirname, '../../../', 'public/files');
+const pronunciation_destination = getPublicStoragePath('pronunciations');
+const destination = getPublicStoragePath('files');
 
 fs.mkdirSync(destination, { recursive: true });
+fs.mkdirSync(pronunciation_destination, { recursive: true });
 
 const pronunciation_storage = diskStorage({
   destination: pronunciation_destination,

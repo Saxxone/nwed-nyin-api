@@ -13,16 +13,16 @@ import { LoggingInterceptor } from './app.interceptor';
 import { MulterModule } from '@nestjs/platform-express';
 import { PrismaService } from './prisma/prisma.service';
 import { FileModule } from './file/file.module';
-import { join } from 'path';
+import { getPublicStorageRoot } from './config/storage';
 
 @Module({
   imports: [
     MulterModule.register({
-      dest: '../articles',
+      dest: getPublicStorageRoot(),
     }),
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'public'),
-      serveRoot: '/articles/',
+      rootPath: getPublicStorageRoot(),
+      serveRoot: '/public/',
     }),
     ThrottlerModule.forRoot([
       {

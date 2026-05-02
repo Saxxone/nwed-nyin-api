@@ -7,7 +7,8 @@ import {
 import { Article, File, FileType, Prisma, Status } from '@prisma/client';
 import { existsSync } from 'fs';
 import { promises as fs } from 'fs';
-import { dirname, isAbsolute, join } from 'path';
+import { dirname, isAbsolute } from 'path';
+import { getPublicStoragePath } from '../config/storage';
 import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
@@ -200,15 +201,7 @@ export class ArticleService {
       .replace(/^public\/+/, '')
       .replace(/^articles\/+/, '');
 
-    return join(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'public',
-      'articles',
-      normalized_body,
-    );
+    return getPublicStoragePath('articles', normalized_body);
   }
 
   private createFallbackImageFile(
@@ -263,7 +256,10 @@ export class ArticleService {
     );
   }
 
-  private async slugify(title: string, ignore_article_id?: string): Promise<string> {
+  private async slugify(
+    title: string,
+    ignore_article_id?: string,
+  ): Promise<string> {
     let slug = title
       .toLowerCase()
       .normalize('NFD')
@@ -331,13 +327,7 @@ export class ArticleService {
     content: string,
   ): Promise<string> {
     try {
-      const file_path = join(
-        __dirname,
-        '../../../',
-        process.env.FILE_BASE_URL,
-        'articles',
-        `${slug}.md`,
-      );
+      const file_path = getPublicStoragePath('articles', `${slug}.md`);
 
       const dir = dirname(file_path);
 

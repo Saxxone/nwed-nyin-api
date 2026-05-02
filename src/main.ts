@@ -5,6 +5,7 @@ import { AppModule } from './app.module';
 
 async function bootstrap() {
   const ui_base_url = process.env.UI_BASE_URL || 'https://www.nwednyin.org';
+  const port = Number(process.env.PORT ?? 8080);
   const app = await NestFactory.create(AppModule);
   app.enableCors({
     origin: ui_base_url,
@@ -21,10 +22,10 @@ async function bootstrap() {
 
   const accent = '\x1b[01m';
   const reset = '\x1b[0m';
-  await app.listen(8080);
+  await app.listen(port, '0.0.0.0');
   console.log(
     `Application is running on: ${accent}${await app.getUrl()}${reset}`,
-    `\nLocal network on: ${accent}http://${local_network_ip}:${process.env.PORT ?? 8080}${reset}`,
+    `\nLocal network on: ${accent}http://${local_network_ip}:${port}${reset}`,
   );
 }
 bootstrap();
