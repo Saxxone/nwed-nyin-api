@@ -7,6 +7,7 @@
   "license": "UNLICENSED",
   "scripts": {
     "build": "prisma generate && nest build",
+    "build:compile": "nest build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "prisma generate && nest start --watch",
@@ -28,7 +29,7 @@
     "prisma:reset": "prisma migrate reset --force",
     "prisma:seed": "ts-node prisma/seed.ts",
     "prisma:drop": "prisma migrate reset --force && prisma db push --force",
-    "postinstall": "prisma generate"
+    "postinstall": "node scripts/prisma-postinstall.cjs"
   },
   "dependencies": {
     "@nestjs/bullmq": "^10.2.3",
