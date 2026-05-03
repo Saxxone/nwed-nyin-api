@@ -67,7 +67,7 @@ describe('DictionaryService', () => {
       expect.objectContaining({
         take: 50,
         skip: 0,
-        orderBy: { term: 'asc' },
+        orderBy: [{ term: 'asc' }, { id: 'asc' }],
       }),
     );
     expect(prisma.word.findMany.mock.calls[0][0]).not.toHaveProperty('cursor');

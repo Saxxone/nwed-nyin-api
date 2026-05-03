@@ -114,13 +114,16 @@ export class DictionaryService {
   }): Promise<{ words: Word[]; totalCount: number; audioCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
 
+    const safeSkip =
+      typeof skip === 'number' && Number.isFinite(skip) ? Math.max(0, skip) : 0;
+
     const [words, totalCount, audioCount] = await this.prisma.$transaction([
       this.prisma.word.findMany({
         take,
-        skip: skip,
+        skip: cursor ? 1 + safeSkip : safeSkip,
         where: this.alive_word_filter,
         ...(cursor ? { cursor: { id: cursor } } : {}),
-        orderBy: { term: 'asc' },
+        orderBy: [{ term: 'asc' }, { id: 'asc' }],
         include: {
           pronunciation_audios: {
             select: {
@@ -176,7 +179,7 @@ export class DictionaryService {
           },
           ...this.alive_word_filter,
         },
-        orderBy: { term: 'asc' },
+        orderBy: [{ term: 'asc' }, { id: 'asc' }],
         include: {
           pronunciation_audios: {
             select: {

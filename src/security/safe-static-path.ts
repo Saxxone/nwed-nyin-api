@@ -75,19 +75,23 @@ export function resolvePublicFileUnderFolder(
   return fullPath;
 }
 
-/** For legacy {@code pronunciations/foo.webm} style query paths. */
+/** For legacy nested public paths resolved as {@code <any>/pronunciations/<filename>}. */
 export function resolveLegacyPublicNestedPath(
   publicRoot: string,
   folder: string,
   rawPath: string,
 ): string {
   const decoded = decodeMaybeEncoded(rawPath);
-  const normalized = normalize(decoded.trim());
-  const segments = normalized.split(/[/\\]+/).filter(Boolean);
+  const normalized = normalize(decoded.trim().replace(/\\/g, '/'));
+  const segments = normalized.split(/[/]+/).filter(Boolean);
 
-  if (segments.length !== 2 || segments[0] !== folder) {
+  // DB stores url as join(FILE_BASE_URL, folder, filename) — prefix varies with env
+  // (e.g. /public/pronunciations/foo.webm or /var/data/pronunciations/foo.webm).
+  const folderIndex = segments.lastIndexOf(folder);
+  if (folderIndex < 0 || folderIndex !== segments.length - 2) {
     throw new NotFoundException('file not found');
   }
 
-  return resolvePublicFileUnderFolder(publicRoot, folder, segments[1]);
+  const fileName = segments[segments.length - 1]!;
+  return resolvePublicFileUnderFolder(publicRoot, folder, fileName);
 }
