@@ -13,8 +13,7 @@ function normalizeOrigin(o: string): string {
 function corsAllowedOrigins(): string[] {
   const origins = new Set<string>();
 
-  const primary =
-    process.env.UI_BASE_URL || 'https://www.nwednyin.org';
+  const primary = process.env.UI_BASE_URL || 'https://www.nwednyin.org';
   for (const chunk of primary.split(',')) {
     const o = normalizeOrigin(chunk);
     if (o.length) origins.add(o);

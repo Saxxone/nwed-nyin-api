@@ -13,7 +13,7 @@ import {
   Res,
   StreamableFile,
 } from '@nestjs/common';
-import { Word } from '@prisma/client';
+import { Word } from 'src/generated/prisma/client';
 import { basename } from 'path';
 import { Response } from 'express';
 import { Public } from 'src/auth/auth.guard';

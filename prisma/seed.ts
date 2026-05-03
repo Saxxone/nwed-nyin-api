@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 import {
   FileType,
   PrismaClient,
@@ -5,9 +7,13 @@ import {
   RelationType,
   Role,
   Status,
-} from '@prisma/client';
+} from '../src/generated/prisma/client';
 
-const prisma = new PrismaClient();
+import { createPrismaMariaDbAdapter } from '../src/prisma/create-mariadb-adapter';
+
+const prisma = new PrismaClient({
+  adapter: createPrismaMariaDbAdapter(),
+});
 
 const seededUsers = [
   {

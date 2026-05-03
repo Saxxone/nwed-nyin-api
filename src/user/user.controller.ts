@@ -9,7 +9,7 @@ import {
   Req,
 } from '@nestjs/common';
 import type { Request } from 'express';
-import { User, User as UserModel } from '@prisma/client';
+import { User, User as UserModel } from 'src/generated/prisma/client';
 import { JwtPayload, Public } from 'src/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
 import { SelfUpdateUserDto } from './dto/update-user.dto';

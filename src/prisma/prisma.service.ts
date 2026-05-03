@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from 'src/generated/prisma/client';
+import { createPrismaMariaDbAdapter } from './create-mariadb-adapter';
 
 @Injectable()
 export class PrismaService
@@ -8,6 +9,7 @@ export class PrismaService
 {
   constructor() {
     super({
+      adapter: createPrismaMariaDbAdapter(),
       omit: {
         user: {
           password: true,

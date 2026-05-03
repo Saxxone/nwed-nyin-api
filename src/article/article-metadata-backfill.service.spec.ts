@@ -2,7 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { promises as fs } from 'fs';
 import type { Mock } from 'jest-mock';
-import { ReferenceType } from '@prisma/client';
+import { ReferenceType } from 'src/generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 

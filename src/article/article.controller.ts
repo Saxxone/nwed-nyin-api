@@ -12,7 +12,7 @@ import {
   Res,
   StreamableFile,
 } from '@nestjs/common';
-import { Article } from '@prisma/client';
+import { Article } from 'src/generated/prisma/client';
 import { Response } from 'express';
 import { basename } from 'path';
 import { Public } from '../auth/auth.guard';

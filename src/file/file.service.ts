@@ -5,7 +5,12 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { File as FileModel, FileType, Prisma, Status } from '@prisma/client';
+import {
+  File as FileModel,
+  FileType,
+  Prisma,
+  Status,
+} from 'src/generated/prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
 import { join, resolve } from 'path';

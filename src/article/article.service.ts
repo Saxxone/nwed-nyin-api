@@ -13,7 +13,7 @@ import {
   Role,
   Status,
   User,
-} from '@prisma/client';
+} from 'src/generated/prisma/client';
 import { existsSync, promises as fs } from 'fs';
 import { dirname, isAbsolute, join } from 'path';
 import { FileService } from '../file/file.service';

@@ -1,4 +1,4 @@
-import { Article, FileType, ReferenceType } from '@prisma/client';
+import { Article, FileType, ReferenceType } from 'src/generated/prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsArray,

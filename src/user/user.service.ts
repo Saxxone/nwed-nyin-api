@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { User, Prisma, Role } from '@prisma/client';
+import { User, Prisma, Role } from 'src/generated/prisma/client';
 import * as bcrypt from 'bcrypt';
 import { CreateFedUserDto, CreateUserDto } from './dto/create-user.dto';
 import { SelfUpdateUserDto } from './dto/update-user.dto';

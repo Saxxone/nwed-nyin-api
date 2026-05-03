@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, User, Word } from '@prisma/client';
+import { Prisma, Role, User, Word } from 'src/generated/prisma/client';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from '../user/user.service';

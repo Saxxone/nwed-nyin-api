@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Prisma, ReferenceType, Status } from '@prisma/client';
+import { Prisma, ReferenceType, Status } from 'src/generated/prisma/client';
 import { promises as fs } from 'fs';
 import { isAbsolute, join } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
