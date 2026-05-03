@@ -45,14 +45,13 @@ export class DictionaryService {
   }
 
   private treatInvalidUndefinedNull(val: any) {
-    if (
-      val?.toLocaleLowerCase() === 'undefined' ||
-      val?.toLocaleLowerCase() === 'null' ||
-      val?.toLocaleLowerCase() === 'nan'
-    ) {
+    if (val == null) return undefined;
+    if (typeof val !== 'string') return undefined;
+    const t = val.trim().toLocaleLowerCase();
+    if (!t || t === 'undefined' || t === 'null' || t === 'nan') {
       return undefined;
     }
-    return val;
+    return val.trim();
   }
 
   async create(
