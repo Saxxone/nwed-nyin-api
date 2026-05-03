@@ -66,6 +66,8 @@ const public_article_select = {
       url: true,
       path: true,
       mimetype: true,
+      width: true,
+      height: true,
       caption: true,
       credit: true,
       alt_text: true,
@@ -99,6 +101,8 @@ type PublicArticleMedia = Pick<
   | 'url'
   | 'path'
   | 'mimetype'
+  | 'width'
+  | 'height'
   | 'caption'
   | 'credit'
   | 'alt_text'
@@ -216,6 +220,8 @@ export class ArticleService {
         url: file.url,
         path: file.path,
         mimetype: file.mimetype,
+        width: file.width,
+        height: file.height,
         caption: file.caption,
         credit: file.credit,
         alt_text: file.alt_text,
@@ -301,6 +307,8 @@ export class ArticleService {
       url: image_url,
       path: image_url,
       mimetype: 'image/*',
+      width: null,
+      height: null,
       caption: null,
       credit: null,
       alt_text: null,

@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { UpdateFileDto } from './dto/update-file.dto';
+import { MulterImageDimensions } from './file.manager';
 
 @Injectable()
 export class FileService {
@@ -91,12 +92,24 @@ export class FileService {
     const saved_files: string[] = [];
 
     for (const file of files) {
+      const image_dims = file as MulterImageDimensions;
+      const width =
+        typeof image_dims.image_width === 'number'
+          ? image_dims.image_width
+          : undefined;
+      const height =
+        typeof image_dims.image_height === 'number'
+          ? image_dims.image_height
+          : undefined;
+
       const saved_file = await this.prisma.file.create({
         data: {
           filename: file.filename,
           originalname: file.originalname,
           path: join(process.env.FILE_BASE_URL, folder, file.filename),
           url: join(process.env.FILE_BASE_URL, folder, file.filename),
+          width: width ?? null,
+          height: height ?? null,
           mimetype: file.mimetype,
           size: file.size,
           status: Status.PENDING,
@@ -119,6 +132,8 @@ export class FileService {
       url: string;
       type: FileType;
       mimetype: string;
+      width: number | null;
+      height: number | null;
     }[]
   > {
     return await Promise.all(
@@ -140,6 +155,8 @@ export class FileService {
           url: file.url,
           type: file.type,
           mimetype: file.mimetype,
+          width: file.width ?? null,
+          height: file.height ?? null,
         };
       }),
     );

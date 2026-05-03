@@ -303,6 +303,8 @@ model File {
   id                       String                   @id @default(uuid())
   originalname             String
   filename                 String
+  width                    Int?
+  height                   Int?
   size                     Int
   type                     FileType
   url                      String

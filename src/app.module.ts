@@ -13,7 +13,7 @@ import { LoggingInterceptor } from './app.interceptor';
 import { MulterModule } from '@nestjs/platform-express';
 import { PrismaService } from './prisma/prisma.service';
 import { FileModule } from './file/file.module';
-import { join } from 'path';
+import { resolve } from 'path';
 import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
@@ -23,7 +23,8 @@ import { ScheduleModule } from '@nestjs/schedule';
       dest: '../articles',
     }),
     ServeStaticModule.forRoot({
-      rootPath: join(__dirname, '..', 'public'),
+      // Compiled to dist/src/*.js — repo root is two levels up (same basis as uploads in file.controller.ts).
+      rootPath: resolve(__dirname, '..', '..', 'public'),
       serveRoot: '/articles/',
     }),
     ThrottlerModule.forRoot([

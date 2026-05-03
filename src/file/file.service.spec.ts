@@ -72,6 +72,8 @@ describe('FileService', () => {
         originalname: 'image.jpg',
         mimetype: 'image/jpeg',
         type: 'IMAGE',
+        width: null,
+        height: null,
         owner: {
           connect: { id: 'user-1' },
         },

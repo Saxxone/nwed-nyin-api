@@ -3,15 +3,22 @@ import { exec } from 'child_process';
 import { randomUUID } from 'crypto';
 import { constants } from 'fs';
 import * as fs from 'fs/promises';
-import { dirname, extname, join } from 'path';
-import sharp from 'sharp';
+import { basename, dirname, extname, join } from 'path';
+import sharp, { type OutputInfo } from 'sharp';
 import { promisify } from 'util';
 
 const execPromise = promisify(exec);
 
+/** Used by {@link compressImage} output; propagated into Prisma from {@link FileService.create}. */
+export type MulterImageDimensions = Express.Multer.File & {
+  image_width?: number;
+  image_height?: number;
+};
+
 const allowedMimeTypes = new Set([
   'image/jpeg',
   'image/heic',
+  'image/heif',
   'image/png',
   'image/webp',
   'video/mp4',
@@ -19,6 +26,30 @@ const allowedMimeTypes = new Set([
   'audio/mp3',
   'audio/webm',
 ]);
+
+const MAX_IMG_WIDTH = 3000;
+const MAX_IMG_HEIGHT = 3000;
+
+/** `failOn: 'none'` tolerates malformed EXIF / truncated metadata some mobile exports produce. */
+function resizeInsideBox(file_path: string) {
+  return sharp(file_path, { failOn: 'none' })
+    .rotate()
+    .resize(MAX_IMG_WIDTH, MAX_IMG_HEIGHT, {
+      fit: 'inside',
+      withoutEnlargement: true,
+    });
+}
+
+export function assignImageOutputMeta(
+  file: Express.Multer.File,
+  output: Buffer,
+  info: OutputInfo,
+) {
+  file.size = output.length;
+  const enriched = file as MulterImageDimensions;
+  enriched.image_width = info.width;
+  enriched.image_height = info.height;
+}
 
 export function fileNameFormatter(
   req: Express.Request,
@@ -70,68 +101,65 @@ export async function compressFile(file: Express.Multer.File) {
 }
 
 export async function compressImage(file: Express.Multer.File) {
+  await fs.access(file.path);
+
+  const subtype = file.mimetype.split('/')[1]?.toLowerCase() ?? '';
+
   try {
-    let compressedImageBuffer: Buffer;
+    let result: { data: Buffer; info: OutputInfo };
 
-    const format = file.mimetype.split('/')[1]?.toLowerCase();
-    const image = sharp(file.path);
-    const metadata = await image.metadata();
+    if (subtype === 'heic' || subtype === 'heif') {
+      result = await resizeInsideBox(file.path)
+        .jpeg({ mozjpeg: true, quality: 80 })
+        .toBuffer({ resolveWithObject: true });
 
-    const maxWidth = 3000;
-    const maxHeight = 3000;
-    let width = metadata.width;
-    let height = metadata.height;
+      const dir = dirname(file.path);
+      const stem = basename(file.filename, extname(file.filename));
+      const new_filename = `${stem}.jpg`;
+      const new_path = join(dir, new_filename);
 
-    if (width > maxWidth || height > maxHeight) {
-      if (width > height) {
-        height = Math.round((maxHeight / maxWidth) * width);
-        width = maxWidth;
-      } else {
-        width = Math.round((maxWidth / maxHeight) * height);
-        height = maxHeight;
-      }
+      await fs.unlink(file.path);
+      await fs.writeFile(new_path, result.data);
+
+      file.path = new_path;
+      file.filename = new_filename;
+      file.mimetype = 'image/jpeg';
+      assignImageOutputMeta(file, result.data, result.info);
+      return;
     }
 
-    switch (format) {
+    switch (subtype) {
       case 'jpeg':
       case 'jpg':
-        compressedImageBuffer = await image
-          .resize(width, height, {
-            fit: 'inside',
-            withoutEnlargement: true,
-          })
+        result = await resizeInsideBox(file.path)
           .jpeg({ quality: 80 })
-          .toBuffer();
+          .toBuffer({ resolveWithObject: true });
         break;
       case 'png':
-        compressedImageBuffer = await image
-          .resize(width, height, {
-            fit: 'inside',
-            withoutEnlargement: true,
-          })
+        result = await resizeInsideBox(file.path)
           .png({ compressionLevel: 9 })
-          .toBuffer();
+          .toBuffer({ resolveWithObject: true });
         break;
       case 'webp':
-        compressedImageBuffer = await image
-          .resize(width, height, {
-            fit: 'inside',
-            withoutEnlargement: true,
-          })
+        result = await resizeInsideBox(file.path)
           .webp({ quality: 80 })
-          .toBuffer();
+          .toBuffer({ resolveWithObject: true });
         break;
-
       default:
-        console.warn(
-          `Unsupported image format ${format} for compression. Skipping compression for ${file.originalname}`,
+        throw new BadRequestException(
+          `Unsupported image format for compression: ${subtype}`,
         );
-        return;
     }
 
-    await fs.writeFile(file.path, compressedImageBuffer);
-  } catch (error) {
-    console.error(`Error compressing image ${file.originalname}:`, error);
+    await fs.writeFile(file.path, result.data);
+    assignImageOutputMeta(file, result.data, result.info);
+  } catch (err) {
+    if (err instanceof BadRequestException) throw err;
+
+    console.error(`Error compressing image ${file.originalname}:`, err);
+    throw new BadRequestException(
+      `Could not process this image (${file.originalname}). It may be corrupt or use an unsupported encoding.`,
+    );
   }
 }
 

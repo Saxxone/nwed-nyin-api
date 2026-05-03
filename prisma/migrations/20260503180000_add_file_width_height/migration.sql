@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE `File` ADD COLUMN `width` INTEGER NULL,
+    ADD COLUMN `height` INTEGER NULL;
