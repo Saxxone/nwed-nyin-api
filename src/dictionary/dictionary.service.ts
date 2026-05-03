@@ -29,9 +29,12 @@ export class DictionaryService {
     }
   }
 
-  private assertWordContributorOrAdmin(actor: User, word: Word & {
-    contributors: { id: string }[];
-  }) {
+  private assertWordContributorOrAdmin(
+    actor: User,
+    word: Word & {
+      contributors: { id: string }[];
+    },
+  ) {
     if (actor.role === Role.ADMIN) {
       return;
     }
@@ -108,7 +111,7 @@ export class DictionaryService {
     take?: number;
     skip?: number;
     cursor?: string;
-  }): Promise<{ words: Word[]; totalCount: number, audioCount: number }> {
+  }): Promise<{ words: Word[]; totalCount: number; audioCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
 
     const [words, totalCount, audioCount] = await this.prisma.$transaction([

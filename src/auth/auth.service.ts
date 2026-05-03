@@ -214,10 +214,12 @@ export class AuthService {
   }
 
   async verifyrefresh_token(token: string): Promise<JwtPayload> {
-    const refresh_token_payload: JwtPayload =
-      await this.jwtService.verifyAsync(token, {
+    const refresh_token_payload: JwtPayload = await this.jwtService.verifyAsync(
+      token,
+      {
         secret: jwtConstants.refreshSecret,
-      });
+      },
+    );
 
     const storedrefresh_token = await this.prisma.authToken.findUnique({
       where: {

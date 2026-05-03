@@ -81,6 +81,8 @@ describe('FileService', () => {
 
   it('returns placeholder file lookups', () => {
     expect(service.findAll()).toBe('This action returns all file');
-    expect(service.findOne('file-1')).toBe('This action returns a #file-1 file');
+    expect(service.findOne('file-1')).toBe(
+      'This action returns a #file-1 file',
+    );
   });
 });

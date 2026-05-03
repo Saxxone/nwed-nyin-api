@@ -1,18 +1,18 @@
 import {
-    ForbiddenException,
-    Injectable,
-    NotFoundException,
-    NotImplementedException,
-    UnauthorizedException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  NotImplementedException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
-    Article,
-    File,
-    FileType,
-    Prisma,
-    Role,
-    Status,
-    User,
+  Article,
+  File,
+  FileType,
+  Prisma,
+  Role,
+  Status,
+  User,
 } from '@prisma/client';
 import { existsSync, promises as fs } from 'fs';
 import { dirname, isAbsolute, join } from 'path';

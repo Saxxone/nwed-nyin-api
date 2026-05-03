@@ -8,9 +8,8 @@ type SupertestRequest = (
   app: Parameters<typeof request.agent>[0],
 ) => ReturnType<typeof request.agent>;
 
-const supertestRequest = (
-  (request as unknown as { default?: SupertestRequest }).default ?? request
-) as SupertestRequest;
+const supertestRequest = ((request as unknown as { default?: SupertestRequest })
+  .default ?? request) as SupertestRequest;
 
 describe('AppController (e2e)', () => {
   let app: INestApplication;

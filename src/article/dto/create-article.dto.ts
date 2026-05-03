@@ -1,16 +1,16 @@
 import { Article, FileType, ReferenceType } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
-    IsArray,
-    IsDateString,
-    IsEnum,
-    IsInt,
-    IsNotEmpty,
-    IsOptional,
-    IsString,
-    IsUrl,
-    Min,
-    ValidateNested,
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Min,
+  ValidateNested,
 } from 'class-validator';
 
 /** Ignored by the API — revision snapshots are persisted server-side. */

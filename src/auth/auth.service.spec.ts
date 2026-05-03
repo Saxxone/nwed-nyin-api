@@ -90,7 +90,9 @@ describe('AuthService', () => {
       refresh_token: 'refresh-token',
     });
 
-    await expect(service.signIn('editor@example.com', 'secret')).resolves.toEqual({
+    await expect(
+      service.signIn('editor@example.com', 'secret'),
+    ).resolves.toEqual({
       id: 'user-1',
       email: 'editor@example.com',
       access_token: 'access-token',
@@ -100,10 +102,7 @@ describe('AuthService', () => {
     expect(userService.findUser).toHaveBeenCalledWith('editor@example.com', {
       withPassword: true,
     });
-    expect(bcrypt.compare).toHaveBeenCalledWith(
-      'secret',
-      'hashed-password',
-    );
+    expect(bcrypt.compare).toHaveBeenCalledWith('secret', 'hashed-password');
   });
 
   it('rejects sign in when the password is invalid', async () => {

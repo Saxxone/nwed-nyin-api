@@ -1,5 +1,12 @@
 import { Role } from '@prisma/client';
-import { IsBoolean, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsBoolean,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 /** Safe subset of profile fields persisted on {@link prisma User}. */
 export class SelfUpdateUserDto {

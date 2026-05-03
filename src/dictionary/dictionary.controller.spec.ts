@@ -59,9 +59,7 @@ describe('DictionaryController', () => {
     const response = { words: [], totalCount: 0, audioCount: 0 };
     dictionaryService.findAll.mockResolvedValue(response);
 
-    await expect(controller.findAll(25, 5, 'cursor-1')).resolves.toBe(
-      response,
-    );
+    await expect(controller.findAll(25, 5, 'cursor-1')).resolves.toBe(response);
 
     expect(dictionaryService.findAll).toHaveBeenCalledWith({
       take: 25,

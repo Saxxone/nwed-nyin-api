@@ -62,7 +62,10 @@ export class DictionaryController {
   ): Promise<StreamableFile> {
     try {
       const segments = path?.trim().split('/')?.filter(Boolean) ?? [];
-      const tail = segments.length >= 2 ? segments[1].trim().normalize('NFD') : 'pronunciation';
+      const tail =
+        segments.length >= 2
+          ? segments[1].trim().normalize('NFD')
+          : 'pronunciation';
 
       const stream = await this.fileService.streamLegacyPublicPath(
         path,

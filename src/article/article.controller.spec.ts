@@ -117,7 +117,9 @@ describe('ArticleController', () => {
     articleService.findRevisions.mockResolvedValue(revisions);
 
     await expect(
-      controller.revisions('article-1', { user: { sub: 'editor@example.com' } }),
+      controller.revisions('article-1', {
+        user: { sub: 'editor@example.com' },
+      }),
     ).resolves.toBe(revisions);
 
     expect(articleService.findRevisions).toHaveBeenCalledWith(
