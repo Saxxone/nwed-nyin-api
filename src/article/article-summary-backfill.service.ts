@@ -159,40 +159,67 @@ export class ArticleSummaryBackfillService {
     );
 
     if (article.body) {
-      try {
-        return await fs.readFile(this.resolveMarkdownPath(article.body), 'utf8');
-      } catch (error) {
-        if (version_markdown) return version_markdown;
+      const markdown = await this.readFirstExistingMarkdown(article.body);
+      if (markdown) return markdown;
+      if (version_markdown) return version_markdown;
 
-        this.logger.warn(
-          `Unable to read markdown file or latest version content for ${article.slug}`,
-        );
-      }
+      this.logger.warn(
+        `Unable to read markdown file or latest version content for ${article.slug}`,
+      );
     }
 
     return version_markdown;
   }
 
-  private resolveMarkdownPath(body: string): string {
-    if (isAbsolute(body)) return body;
+  private async readFirstExistingMarkdown(
+    body: string,
+  ): Promise<string | null> {
+    for (const path of this.resolveMarkdownPaths(body)) {
+      try {
+        return await fs.readFile(path, 'utf8');
+      } catch {
+        continue;
+      }
+    }
+
+    return null;
+  }
+
+  private resolveMarkdownPaths(body: string): string[] {
+    if (isAbsolute(body)) return [body];
 
     const normalized_body = body
       .replace(/^\/+/, '')
       .replace(/^public\/+/, '')
       .replace(/^articles\/+/, '');
 
-    return join(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'public',
-      'articles',
-      normalized_body,
+    return Array.from(
+      new Set([
+        join(__dirname, '..', '..', 'public', 'articles', normalized_body),
+        join(
+          __dirname,
+          '..',
+          '..',
+          '..',
+          'public',
+          'articles',
+          normalized_body,
+        ),
+        join(process.cwd(), 'public', 'articles', normalized_body),
+        join(
+          process.cwd(),
+          'nwed-nyin-api',
+          'public',
+          'articles',
+          normalized_body,
+        ),
+      ]),
     );
   }
 
-  private readMarkdownFromLatestVersion(content: Prisma.JsonValue): string | null {
+  private readMarkdownFromLatestVersion(
+    content: Prisma.JsonValue,
+  ): string | null {
     if (typeof content === 'string') return content;
     if (!this.isRecord(content)) return null;
 
