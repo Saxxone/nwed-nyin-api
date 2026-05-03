@@ -14,9 +14,11 @@ import { MulterModule } from '@nestjs/platform-express';
 import { PrismaService } from './prisma/prisma.service';
 import { FileModule } from './file/file.module';
 import { join } from 'path';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
+    ScheduleModule.forRoot(),
     MulterModule.register({
       dest: '../articles',
     }),

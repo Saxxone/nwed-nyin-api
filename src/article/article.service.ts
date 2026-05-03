@@ -13,6 +13,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
+import { generateArticleSummary } from './helpers/article-summary.helper';
 
 const public_article_select = {
   id: true,
@@ -263,7 +264,10 @@ export class ArticleService {
     );
   }
 
-  private async slugify(title: string, ignore_article_id?: string): Promise<string> {
+  private async slugify(
+    title: string,
+    ignore_article_id?: string,
+  ): Promise<string> {
     let slug = title
       .toLowerCase()
       .normalize('NFD')
@@ -408,7 +412,7 @@ export class ArticleService {
             slug: slug,
             body: 'articles/' + slug + '.md',
             status: Status.PUBLISHED,
-            summary: content.substring(0, 50),
+            summary: generateArticleSummary(content),
             sections: {
               create: sections,
             },
@@ -697,7 +701,7 @@ export class ArticleService {
 
     if (should_update_markdown) {
       update_data.body = 'articles/' + new_slug + '.md';
-      update_data.summary = markdown.substring(0, 50);
+      update_data.summary = generateArticleSummary(markdown);
       update_data.sections = {
         deleteMany: {},
         create: sections,

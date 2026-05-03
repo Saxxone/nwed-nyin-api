@@ -287,6 +287,7 @@ describe('ArticleService', () => {
         data: expect.objectContaining({
           slug: 'updated-title',
           body: 'articles/updated-title.md',
+          summary: 'Updated content',
           metadata: {
             upsert: {
               create: {
