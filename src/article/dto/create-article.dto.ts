@@ -1,22 +1,23 @@
 import { Article, FileType, ReferenceType } from '@prisma/client';
-import {
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsArray,
-  ValidateNested,
-  IsInt,
-  IsUrl,
-  IsDateString,
-  Min,
-} from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+    IsArray,
+    IsDateString,
+    IsEnum,
+    IsInt,
+    IsNotEmpty,
+    IsOptional,
+    IsString,
+    IsUrl,
+    Min,
+    ValidateNested,
+} from 'class-validator';
 
+/** Ignored by the API — revision snapshots are persisted server-side. */
 export class ArticleVersion {
   version: number;
   created_by: string;
-  content: any; // Replace 'any' with appropriate type if known
+  content: unknown;
 }
 
 export interface ArticleSection {

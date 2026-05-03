@@ -1,30 +1,29 @@
 import {
-  Injectable,
-  NotFoundException,
-  NotImplementedException,
-  UnauthorizedException,
-  ForbiddenException,
+    ForbiddenException,
+    Injectable,
+    NotFoundException,
+    NotImplementedException,
+    UnauthorizedException,
 } from '@nestjs/common';
 import {
-  Article,
-  File,
-  FileType,
-  Prisma,
-  Role,
-  Status,
-  User,
+    Article,
+    File,
+    FileType,
+    Prisma,
+    Role,
+    Status,
+    User,
 } from '@prisma/client';
-import { existsSync } from 'fs';
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import { dirname, isAbsolute, join } from 'path';
 import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 
+import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { generateArticleSummary } from './helpers/article-summary.helper';
-import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 
 const public_article_select = {
   id: true,
@@ -143,6 +142,29 @@ export type PublicArticle = {
 };
 
 type RelatedArticleSource = 'article' | 'word';
+
+export type ArticleRevisionEntry = {
+  id: string;
+  article_id: string;
+  version: number;
+  created_at: Date;
+  created_by: string;
+  content: Prisma.JsonValue;
+};
+
+function revisionPayload(input: {
+  title: string;
+  summary: string;
+  body_path: string;
+  markdown: string;
+}): Prisma.InputJsonValue {
+  return {
+    title: input.title,
+    summary: input.summary,
+    body: input.body_path,
+    markdown: input.markdown,
+  };
+}
 
 @Injectable()
 export class ArticleService {
@@ -370,44 +392,50 @@ export class ArticleService {
     return [];
   }
 
+  /** Words from summary text used as related-article signals (title is kept as a full phrase separately). */
+  private extractSummaryLexemes(summary?: string | null): string[] {
+    if (!summary?.trim()) return [];
+
+    return summary
+      .split(/[^\p{L}\p{N}]+/u)
+      .map((token) => token.trim().toLowerCase())
+      .filter((token) => token.length >= 2);
+  }
+
   private buildRelatedArticleWhere({
     terms,
     excludeSlug,
     excludeSlugs = [],
-    includeContentFields = true,
+    matchStrategy,
   }: {
     terms: string[];
     excludeSlug?: string;
     excludeSlugs?: string[];
-    includeContentFields?: boolean;
+    matchStrategy: 'full' | 'title_summary_slug';
   }): Prisma.ArticleWhereInput {
     const excluded_slugs = Array.from(
       new Set([...(excludeSlug ? [excludeSlug] : []), ...excludeSlugs]),
     );
     const term_filters = terms.flatMap((term) => [
-      ...(includeContentFields
+      { title: { contains: term } },
+      { summary: { contains: term } },
+      { slug: { contains: term } },
+      ...(matchStrategy === 'full'
         ? [
-            { title: { contains: term } },
-            { summary: { contains: term } },
-            { slug: { contains: term } },
-          ]
-        : []),
-      {
-        tags: {
-          some: {
-            name: { contains: term },
-          },
-        },
-      },
-      {
-        categories: {
-          some: {
-            name: { contains: term },
-          },
-        },
-      },
-      ...(includeContentFields
-        ? [
+            {
+              tags: {
+                some: {
+                  name: { contains: term },
+                },
+              },
+            },
+            {
+              categories: {
+                some: {
+                  name: { contains: term },
+                },
+              },
+            },
             {
               sections: {
                 some: {
@@ -429,20 +457,32 @@ export class ArticleService {
     };
   }
 
-  private scoreRelatedArticle(article: PublicArticlePayload, terms: string[]) {
-    const searchable_text = [
-      article.title,
-      article.summary,
-      article.slug,
-      ...article.categories.map((category) => category.name),
-      ...article.tags.map((tag) => tag.name),
-      ...this.readKeywordTerms(article.metadata?.keywords),
-    ]
+  private scoreRelatedArticle(
+    article: PublicArticlePayload,
+    terms: string[],
+    taxonomyBonuses = true,
+  ) {
+    const core_text = [article.title, article.summary, article.slug]
       .join(' ')
       .toLowerCase();
 
+    const searchable_text = taxonomyBonuses
+      ? [
+          core_text,
+          ...article.categories.map((category) => category.name),
+          ...article.tags.map((tag) => tag.name),
+          ...this.readKeywordTerms(article.metadata?.keywords),
+        ]
+          .join(' ')
+          .toLowerCase()
+      : core_text;
+
     return terms.reduce((score, term) => {
       if (!searchable_text.includes(term)) return score;
+
+      if (!taxonomyBonuses) {
+        return score + 1;
+      }
 
       const tag_match = article.tags.some((tag) =>
         tag.name.toLowerCase().includes(term),
@@ -747,6 +787,8 @@ export class ArticleService {
         this.denyArticleViewer(user.role);
 
         const sections = this.extractSectionsFromMarkdown(content);
+        const summary_after_create = generateArticleSummary(content);
+        const body_path = `articles/${slug}.md`;
         const generated_metadata = this.inferArticleWriteMetadata({
           title: article_data.title,
           markdown: content,
@@ -774,9 +816,9 @@ export class ArticleService {
           data: {
             ...article_data,
             slug: slug,
-            body: 'articles/' + slug + '.md',
+            body: body_path,
             status: Status.PUBLISHED,
-            summary: generateArticleSummary(content),
+            summary: summary_after_create,
             sections: {
               create: sections,
             },
@@ -820,15 +862,16 @@ export class ArticleService {
             },
 
             versions: {
-              create:
-                article_data.versions?.map((version) => ({
-                  version: version.version,
-                  content: version.content,
-                  created_by: email,
-                  article_id_version: {
-                    version: version.version,
-                  },
-                })) || [],
+              create: {
+                version: 1,
+                content: revisionPayload({
+                  title: article_data.title,
+                  summary: summary_after_create,
+                  body_path,
+                  markdown: content,
+                }),
+                created_by: email,
+              },
             },
 
             references: {
@@ -953,6 +996,8 @@ export class ArticleService {
     let exclude_slug = slug;
     let suggestion_terms = this.normalizeSuggestionTerms(terms);
     const excluded_slugs = this.normalizeSuggestionTerms(excludeSlugs);
+    const match_strategy =
+      source === 'word' ? ('full' as const) : ('title_summary_slug' as const);
 
     if (source === 'article' && slug) {
       const current_article = await this.prisma.article.findFirst({
@@ -966,10 +1011,8 @@ export class ArticleService {
 
       exclude_slug = current_article.slug;
       suggestion_terms = this.normalizeSuggestionTerms([
-        ...suggestion_terms,
-        ...current_article.categories.map((category) => category.name),
-        ...current_article.tags.map((tag) => tag.name),
-        ...this.readKeywordTerms(current_article.metadata?.keywords),
+        current_article.title,
+        ...this.extractSummaryLexemes(current_article.summary),
       ]);
     }
 
@@ -979,7 +1022,7 @@ export class ArticleService {
             terms: suggestion_terms,
             excludeSlug: exclude_slug,
             excludeSlugs: excluded_slugs,
-            includeContentFields: source === 'word',
+            matchStrategy: match_strategy,
           }),
           take: Math.max(take * 4, take),
           orderBy: {
@@ -992,7 +1035,11 @@ export class ArticleService {
     const ranked_candidates = candidates
       .map((article) => ({
         article,
-        score: this.scoreRelatedArticle(article, suggestion_terms),
+        score: this.scoreRelatedArticle(
+          article,
+          suggestion_terms,
+          match_strategy === 'full',
+        ),
       }))
       .sort((left, right) => {
         if (right.score !== left.score) return right.score - left.score;
@@ -1077,6 +1124,34 @@ export class ArticleService {
   //   }
   // }
 
+  async findRevisions(
+    id: string,
+    email: string,
+  ): Promise<ArticleRevisionEntry[]> {
+    const existing_article = await this.prisma.article.findUnique({
+      where: { id },
+      include: {
+        contributors: {
+          select: { id: true },
+        },
+      },
+    });
+
+    const user = await this.userService.findUser(email);
+    if (!user) throw new UnauthorizedException('Login or create account');
+    if (!existing_article) {
+      throw new NotFoundException(`Article with id ${id} not found`);
+    }
+
+    this.denyArticleViewer(user.role);
+    this.assertArticleEditRights(user, existing_article);
+
+    return this.prisma.articleVersion.findMany({
+      where: { article_id: id },
+      orderBy: [{ version: 'desc' }],
+    });
+  }
+
   async update(
     id: string,
     update_article_dto: UpdateArticleDto,
@@ -1090,7 +1165,6 @@ export class ArticleService {
       tags,
       references,
       metadata,
-      versions,
     } = update_article_dto;
 
     const existing_article = await this.prisma.article.findUnique({
@@ -1178,8 +1252,36 @@ export class ArticleService {
     };
 
     if (should_update_markdown) {
-      update_data.body = 'articles/' + new_slug + '.md';
-      update_data.summary = generateArticleSummary(markdown);
+      const aggregate = await this.prisma.articleVersion.aggregate({
+        where: { article_id: id },
+        _max: { version: true },
+      });
+      const max_revision_row = aggregate._max.version ?? 0;
+
+      const next_version =
+        max_revision_row === 0
+          ? Math.max(1, existing_article.version)
+          : Math.max(existing_article.version, max_revision_row) + 1;
+
+      const body_path_after = `articles/${new_slug}.md`;
+      const computed_summary = generateArticleSummary(markdown);
+
+      update_data.version = next_version;
+      update_data.versions = {
+        create: {
+          version: next_version,
+          content: revisionPayload({
+            title: next_title,
+            summary: computed_summary,
+            body_path: body_path_after,
+            markdown,
+          }),
+          created_by: email,
+        },
+      };
+
+      update_data.body = body_path_after;
+      update_data.summary = computed_summary;
       update_data.sections = {
         deleteMany: {},
         create: sections,
@@ -1190,12 +1292,12 @@ export class ArticleService {
           mimetype: 'text/markdown',
           size: markdown.length,
           type: FileType.DOCUMENT,
-          url: 'articles/' + new_slug + '.md',
+          url: body_path_after,
           owner: {
             connect: { id: user.id },
           },
           filename: new_slug,
-          path: 'articles/' + new_slug + '.md',
+          path: body_path_after,
         },
         connect: owned_media_file_ids.map((file_id) => ({ id: file_id })),
       };
@@ -1285,16 +1387,6 @@ export class ArticleService {
           create: next_metadata,
           update: next_metadata,
         },
-      };
-    }
-
-    if (versions?.length) {
-      update_data.versions = {
-        create: versions.map((version) => ({
-          version: version.version,
-          content: version.content,
-          created_by: email,
-        })),
       };
     }
 

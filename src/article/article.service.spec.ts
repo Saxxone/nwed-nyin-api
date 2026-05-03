@@ -1,11 +1,11 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Test, TestingModule } from '@nestjs/testing';
 import type { Mock } from 'jest-mock';
-import { ArticleService } from './article.service';
+import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
-import { FileService } from '../file/file.service';
 import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
+import { ArticleService } from './article.service';
 
 type AsyncPrismaMock = Mock<() => Promise<unknown>>;
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -19,6 +19,9 @@ describe('ArticleService', () => {
       findUnique: AsyncPrismaMock;
       count: AsyncPrismaMock;
       update: AsyncPrismaMock;
+    };
+    articleVersion: {
+      aggregate: AsyncPrismaMock;
     };
     file: {
       findMany: AsyncPrismaMock;
@@ -65,6 +68,10 @@ describe('ArticleService', () => {
         findUnique: jest.fn<() => Promise<unknown>>(),
         count: jest.fn<() => Promise<unknown>>(),
         update: jest.fn<() => Promise<unknown>>(),
+      },
+      articleVersion: {
+        aggregate:
+          jest.fn<() => Promise<{ _max: { version: number | null } }>>(),
       },
       file: {
         findMany: jest.fn<() => Promise<unknown>>(),
@@ -198,15 +205,17 @@ describe('ArticleService', () => {
     );
   });
 
-  it('suggests related articles from the current article metadata', async () => {
+  it('suggests related articles from the current article title and summary only', async () => {
     const currentArticle = makeArticle({
       id: 'current-article',
       title: 'Ibibio Language',
       slug: 'ibibio-language',
+      summary:
+        'Orthography and reading lessons for ibibio learners in Nigeria.',
       categories: [{ name: 'Language' }],
       tags: [{ name: 'ibibio' }],
       metadata: {
-        keywords: ['orthography'],
+        keywords: ['ignored-for-related'],
         language: 'en',
         read_time: 3,
         complexity: null,
@@ -217,22 +226,24 @@ describe('ArticleService', () => {
       title: 'Recent Culture',
       slug: 'recent-culture',
       created_at: new Date('2026-02-01T00:00:00.000Z'),
+      summary: 'Daily culture headlines.',
       categories: [{ name: 'Culture' }],
       tags: [],
     });
-    const taggedArticle = makeArticle({
+    const summaryOverlapArticle = makeArticle({
       id: 'article-3',
-      title: 'Ibibio Lessons',
-      slug: 'ibibio-lessons',
+      title: 'Writing systems overview',
+      slug: 'writing-systems',
       created_at: new Date('2026-01-15T00:00:00.000Z'),
-      categories: [{ name: 'Language' }],
-      tags: [{ name: 'ibibio' }],
+      summary: 'Orthography across languages.',
+      categories: [{ name: 'Reference' }],
+      tags: [{ name: 'alphabet' }],
     });
 
     prisma.article.findFirst.mockResolvedValue(currentArticle);
     prisma.article.findMany.mockResolvedValue([
       lessRelevantArticle,
-      taggedArticle,
+      summaryOverlapArticle,
     ]);
 
     await expect(
@@ -243,7 +254,7 @@ describe('ArticleService', () => {
         take: 2,
       }),
     ).resolves.toEqual([
-      expect.objectContaining({ slug: 'ibibio-lessons' }),
+      expect.objectContaining({ slug: 'writing-systems' }),
       expect.objectContaining({ slug: 'recent-culture' }),
     ]);
 
@@ -258,8 +269,8 @@ describe('ArticleService', () => {
           status: 'PUBLISHED',
           slug: { notIn: ['ibibio-language', 'already-seen'] },
           OR: expect.arrayContaining([
-            { tags: { some: { name: { contains: 'ibibio' } } } },
-            { categories: { some: { name: { contains: 'language' } } } },
+            { title: { contains: 'ibibio language' } },
+            { summary: { contains: 'orthography' } },
           ]),
         }),
         take: 8,
@@ -357,7 +368,7 @@ describe('ArticleService', () => {
     );
   });
 
-  it('updates article content without resetting required versions or duplicating metadata', async () => {
+  it('updates article content, appends a revision row, and merges metadata', async () => {
     const publicArticle = {
       id: 'article-1',
       title: 'Updated Title',
@@ -391,12 +402,16 @@ describe('ArticleService', () => {
       id: 'article-1',
       title: 'Original Title',
       slug: 'original-title',
+      version: 1,
       file: [],
       categories: [],
       tags: [],
       references: [],
       created_by: 'editor@example.com',
       contributors: [{ id: 'user-1' }],
+    });
+    prisma.articleVersion.aggregate.mockResolvedValue({
+      _max: { version: null },
     });
     prisma.article.count.mockResolvedValue(0);
     prisma.file.findMany.mockResolvedValue([]);
@@ -447,8 +462,20 @@ describe('ArticleService', () => {
         where: { id: 'article-1' },
         data: expect.objectContaining({
           slug: 'updated-title',
+          version: 1,
           body: 'articles/updated-title.md',
           summary: 'Updated content',
+          versions: {
+            create: {
+              version: 1,
+              content: expect.objectContaining({
+                title: 'Updated Title',
+                markdown: '## Intro\nUpdated content',
+                body: 'articles/updated-title.md',
+              }),
+              created_by: 'editor@example.com',
+            },
+          },
           metadata: {
             upsert: {
               create: {
@@ -494,7 +521,63 @@ describe('ArticleService', () => {
         }),
       }),
     );
+  });
+
+  it('increments article version after a revision row already exists', async () => {
+    const publicArticle = {
+      id: 'article-1',
+      title: 'Second',
+      slug: 'second',
+      summary: 'S',
+      body: 'articles/second.md',
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      updated_at: new Date('2026-01-02T00:00:00.000Z'),
+      version: 1,
+      status: 'PUBLISHED',
+      categories: [],
+      tags: [],
+      references: [],
+      file: [],
+      metadata: null,
+      contributors: [{ id: 'user-1', name: 'E', img: '/a.png' }],
+    };
+
+    prisma.article.findUnique.mockResolvedValue({
+      id: 'article-1',
+      title: 'First',
+      slug: 'second',
+      version: 1,
+      file: [],
+      categories: [],
+      tags: [],
+      references: [],
+      created_by: 'editor@example.com',
+      contributors: [{ id: 'user-1' }],
+    });
+    prisma.articleVersion.aggregate.mockResolvedValue({
+      _max: { version: 1 },
+    });
+    prisma.article.count.mockResolvedValue(0);
+    prisma.file.findMany.mockResolvedValue([]);
+    prisma.article.update.mockResolvedValue({ slug: 'second' });
+    prisma.article.findFirst.mockResolvedValue(publicArticle);
+    userService.findUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'editor@example.com',
+      role: 'EDITOR',
+    });
+    jest
+      .spyOn(service as any, 'writeMarkdownFile')
+      .mockResolvedValue('/tmp/second.md');
+
+    await service.update(
+      'article-1',
+      { title: 'Second', content: '# Next' } as any,
+      'editor@example.com',
+    );
+
     const updateCall = (prisma.article.update as AnyMock).mock.calls[0][0];
-    expect(updateCall.data.versions).toBeUndefined();
+    expect(updateCall.data.version).toBe(2);
+    expect(updateCall.data.versions?.create.version).toBe(2);
   });
 });

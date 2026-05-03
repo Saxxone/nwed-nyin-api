@@ -1,9 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { Test, TestingModule } from '@nestjs/testing';
 import type { Mock } from 'jest-mock';
+import { FileService } from '../file/file.service';
 import { ArticleController } from './article.controller';
 import { ArticleService } from './article.service';
-import { FileService } from '../file/file.service';
 
 type AnyMock = Mock<(...args: any[]) => any>;
 
@@ -15,6 +15,7 @@ describe('ArticleController', () => {
     search: AnyMock;
     findRelated: AnyMock;
     findOne: AnyMock;
+    findRevisions: AnyMock;
     update: AnyMock;
     remove: AnyMock;
   };
@@ -29,6 +30,7 @@ describe('ArticleController', () => {
       search: jest.fn<(...args: any[]) => any>(),
       findRelated: jest.fn<(...args: any[]) => any>(),
       findOne: jest.fn<(...args: any[]) => any>(),
+      findRevisions: jest.fn<(...args: any[]) => any>(),
       update: jest.fn<(...args: any[]) => any>(),
       remove: jest.fn<(...args: any[]) => any>(),
     };
@@ -105,6 +107,23 @@ describe('ArticleController', () => {
     await expect(controller.findOne('first-post')).resolves.toBe(article);
 
     expect(articleService.findOne).toHaveBeenCalledWith('first-post');
+  });
+
+  it('returns ordered revision history for editors with access', async () => {
+    const revisions = [
+      { version: 2, id: 'v2' },
+      { version: 1, id: 'v1' },
+    ];
+    articleService.findRevisions.mockResolvedValue(revisions);
+
+    await expect(
+      controller.revisions('article-1', { user: { sub: 'editor@example.com' } }),
+    ).resolves.toBe(revisions);
+
+    expect(articleService.findRevisions).toHaveBeenCalledWith(
+      'article-1',
+      'editor@example.com',
+    );
   });
 
   it('publishes articles for the authenticated user', async () => {

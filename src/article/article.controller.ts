@@ -1,23 +1,27 @@
 import {
-  Body,
-  Controller,
-  Delete,
-  Get,
-  NotFoundException,
-  Param,
-  Patch,
-  Post,
-  Query,
-  Request,
-  Res,
-  StreamableFile,
+    Body,
+    Controller,
+    Delete,
+    Get,
+    NotFoundException,
+    Param,
+    Patch,
+    Post,
+    Query,
+    Request,
+    Res,
+    StreamableFile,
 } from '@nestjs/common';
 import { Article } from '@prisma/client';
-import { basename } from 'path';
 import { Response } from 'express';
+import { basename } from 'path';
 import { Public } from '../auth/auth.guard';
 import { FileService } from '../file/file.service';
-import { ArticleService, PublicArticle } from './article.service';
+import {
+    ArticleRevisionEntry,
+    ArticleService,
+    PublicArticle,
+} from './article.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 
@@ -106,6 +110,14 @@ export class ArticleController {
       'Content-Disposition': `inline; filename="${filename}"`,
     });
     return this.fileService.streamStaticFile(path, 'articles');
+  }
+
+  @Get('revisions/:id')
+  revisions(
+    @Param('id') id: string,
+    @Request() req: any,
+  ): Promise<ArticleRevisionEntry[]> {
+    return this.articleService.findRevisions(id, req.user.sub);
   }
 
   @Patch('update/:id')
