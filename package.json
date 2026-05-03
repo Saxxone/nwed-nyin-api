@@ -6,8 +6,8 @@
   "private": true,
   "license": "UNLICENSED",
   "scripts": {
-    "build": "prisma generate && nest build",
-    "build:compile": "nest build",
+    "build": "prisma generate && node ./node_modules/@nestjs/cli/bin/nest.js build",
+    "build:compile": "node ./node_modules/@nestjs/cli/bin/nest.js build",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "start:dev": "prisma generate && nest start --watch",
