@@ -1,14 +1,24 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { promises as fs } from 'fs';
 import type { Mock } from 'jest-mock';
 import { ReferenceType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 
+jest.mock('fs', () => ({
+  ...jest.requireActual<typeof import('fs')>('fs'),
+  promises: {
+    ...jest.requireActual<typeof import('fs')>('fs').promises,
+    readFile: jest.fn(),
+  },
+}));
+
 type AsyncPrismaMock = Mock<() => Promise<unknown>>;
 
 describe('ArticleMetadataBackfillService', () => {
   let service: ArticleMetadataBackfillService;
+  let readFileMock: Mock<() => Promise<string>>;
   let prisma: {
     article: {
       findMany: AsyncPrismaMock;
@@ -23,6 +33,8 @@ describe('ArticleMetadataBackfillService', () => {
         update: jest.fn<() => Promise<unknown>>(),
       },
     };
+    readFileMock = fs.readFile as unknown as Mock<() => Promise<string>>;
+    readFileMock.mockReset();
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -47,7 +59,36 @@ describe('ArticleMetadataBackfillService', () => {
       expect.arrayContaining(['Language', 'Learning']),
     );
     expect(metadata.tags).toEqual(
-      expect.arrayContaining(['ibibio', 'words', 'language', 'learning']),
+      expect.arrayContaining([
+        'ibibio',
+        'language-learning',
+        'dictionary',
+        'pronunciation',
+      ]),
+    );
+  });
+
+  it('infers curated domain tags and categories from cultural articles', () => {
+    const metadata = service.inferMetadataFromLatestVersion(
+      'Traditional Marriage In Akwa Ibom',
+      {
+        markdown: [
+          'This oral history describes traditional marriage rites in Akwa Ibom.',
+          'Elders explain bride price, kinship, family lineage, and community memory.',
+        ].join('\n'),
+      },
+    );
+
+    expect(metadata.categories).toEqual(
+      expect.arrayContaining(['Culture', 'History', 'Places']),
+    );
+    expect(metadata.tags).toEqual(
+      expect.arrayContaining([
+        'akwa-ibom',
+        'oral-history',
+        'traditional-marriage',
+        'kinship',
+      ]),
     );
   });
 
@@ -77,6 +118,18 @@ describe('ArticleMetadataBackfillService', () => {
       ]),
     );
     expect(metadata.references).toHaveLength(2);
+  });
+
+  it('does not treat article images as references', () => {
+    const metadata = service.inferMetadataFromLatestVersion('Festival Attire', {
+      markdown: [
+        'Ibibio culture uses cloth, symbols, and community memory.',
+        '![Festival attire](https://cdn.example.com/articles/festival-attire.jpg)',
+        '<img src="https://cdn.example.com/articles/archive-photo.png" alt="Archive photo">',
+      ].join('\n'),
+    });
+
+    expect(metadata.references).toHaveLength(0);
   });
 
   it('merges inferred metadata and skips existing relations', async () => {
@@ -125,7 +178,11 @@ describe('ArticleMetadataBackfillService', () => {
       expect.objectContaining({
         take: 10,
         skip: 0,
+        where: expect.objectContaining({
+          OR: [{ body: { not: null } }, { versions: { some: {} } }],
+        }),
         select: expect.objectContaining({
+          body: true,
           versions: expect.objectContaining({
             orderBy: { version: 'desc' },
             take: 1,
@@ -147,8 +204,8 @@ describe('ArticleMetadataBackfillService', () => {
         tags: expect.objectContaining({
           connectOrCreate: expect.arrayContaining([
             {
-              where: { name: 'learning' },
-              create: { name: 'learning' },
+              where: { name: 'dictionary' },
+              create: { name: 'dictionary' },
             },
           ]),
         }),
@@ -164,6 +221,69 @@ describe('ArticleMetadataBackfillService', () => {
     });
   });
 
+  it('infers metadata from article body markdown when no versions exist', async () => {
+    readFileMock.mockResolvedValueOnce(
+      [
+        '# Why Oral History Matters',
+        'Oral history preserves community memory, family tradition, and heritage.',
+        '## References',
+        '- Archive Source. https://example.com/archive',
+      ].join('\n'),
+    );
+    prisma.article.findMany
+      .mockResolvedValueOnce([
+        {
+          id: 'article-1',
+          title: 'Why Oral History Matters',
+          slug: 'why-oral-history-matters',
+          body: 'articles/why-oral-history-matters.md',
+          categories: [],
+          tags: [],
+          references: [],
+          versions: [],
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    prisma.article.update.mockResolvedValue({});
+
+    await expect(service.backfillArticleMetadata(10)).resolves.toEqual({
+      processed: 1,
+      updated: 1,
+      skipped: 0,
+      failed: 0,
+    });
+
+    expect(readFileMock).toHaveBeenCalledWith(
+      expect.stringContaining('why-oral-history-matters.md'),
+      'utf8',
+    );
+    expect(prisma.article.update).toHaveBeenCalledWith({
+      where: { id: 'article-1' },
+      data: expect.objectContaining({
+        categories: expect.objectContaining({
+          connectOrCreate: expect.arrayContaining([
+            {
+              where: { name: 'Culture' },
+              create: { name: 'Culture' },
+            },
+            {
+              where: { name: 'History' },
+              create: { name: 'History' },
+            },
+          ]),
+        }),
+        references: {
+          create: [
+            expect.objectContaining({
+              citation: 'Archive Source. https://example.com/archive',
+              url: 'https://example.com/archive',
+            }),
+          ],
+        },
+      }),
+    });
+  });
+
   it('skips articles when inferred metadata already exists', async () => {
     prisma.article.findMany
       .mockResolvedValueOnce([
@@ -172,7 +292,7 @@ describe('ArticleMetadataBackfillService', () => {
           title: 'Ibibio Learning',
           slug: 'ibibio-learning',
           categories: [{ name: 'Language' }, { name: 'Learning' }],
-          tags: [{ name: 'ibibio' }, { name: 'language' }, { name: 'learning' }],
+          tags: [{ name: 'ibibio' }, { name: 'language-learning' }],
           references: [],
           versions: [
             {
