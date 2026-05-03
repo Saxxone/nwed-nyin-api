@@ -6,11 +6,14 @@ import {
   Body,
   Put,
   Delete,
+  Req,
 } from '@nestjs/common';
-import { UserService } from './user.service';
+import type { Request } from 'express';
 import { User, User as UserModel } from '@prisma/client';
-import { Public } from 'src/auth/auth.guard';
+import { JwtPayload, Public } from 'src/auth/auth.guard';
 import { CreateUserDto } from './dto/create-user.dto';
+import { SelfUpdateUserDto } from './dto/update-user.dto';
+import { UserService } from './user.service';
 
 @Controller('user')
 export class UserController {
@@ -26,23 +29,31 @@ export class UserController {
   }
 
   @Get('/:id')
-  async getUserById(@Param('id') id: string): Promise<UserModel> {
-    return this.userService.findUser(id);
+  async getUserById(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<Omit<User, 'password'>> {
+    return this.userService.findUserAuthorized(req.user.user_id, id);
   }
 
   @Put('update/:id')
   async updateUser(
     @Param('id') id: string,
-    @Body() data: Partial<User>,
+    @Body() data: SelfUpdateUserDto,
+    @Req() req: Request & { user: JwtPayload },
   ): Promise<UserModel> {
-    return this.userService.updateUser({
-      where: { id: String(id) },
+    return this.userService.updateAuthenticatedProfile(
+      req.user.user_id,
+      id,
       data,
-    });
+    );
   }
 
-  @Delete('post/:id')
-  async deletePost(@Param('id') id: string): Promise<UserModel> {
-    return this.userService.deleteUser({ id: String(id) });
+  @Delete('delete/:id')
+  async deleteUser(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<UserModel> {
+    return this.userService.deleteUserAuthorized(req.user.user_id, id);
   }
 }

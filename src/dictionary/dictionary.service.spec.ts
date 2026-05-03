@@ -88,9 +88,14 @@ describe('DictionaryService', () => {
     expect(prisma.word.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          OR: [
-            { term: { contains: 'ulo' } },
-            { alt_spelling: { contains: 'ulo' } },
+          AND: [
+            {
+              OR: [
+                { term: { contains: 'ulo' } },
+                { alt_spelling: { contains: 'ulo' } },
+              ],
+            },
+            { deleted_at: null },
           ],
         },
         take: 5,

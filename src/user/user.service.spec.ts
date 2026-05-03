@@ -48,7 +48,7 @@ describe('UserService', () => {
     expect(service).toBeDefined();
   });
 
-  it('creates users with hashed passwords and default editor role', async () => {
+  it('creates users with hashed passwords and default viewer role', async () => {
     process.env.DEFAULT_PROFILE_IMG = '/profiles/default.jpg';
     (bcrypt.hash as AnyMock).mockResolvedValue('hashed-password');
     const user = { id: 'user-1', email: 'editor@example.com' };
@@ -68,7 +68,7 @@ describe('UserService', () => {
         name: 'Editor',
         email: 'editor@example.com',
         img: '/profiles/default.jpg',
-        role: 'EDITOR',
+        role: 'VIEWER',
         password: 'hashed-password',
       }),
     });

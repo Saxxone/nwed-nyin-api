@@ -14,6 +14,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { Word } from '@prisma/client';
+import { basename } from 'path';
 import { Response } from 'express';
 import { Public } from 'src/auth/auth.guard';
 import { FileService } from 'src/file/file.service';
@@ -60,12 +61,17 @@ export class DictionaryController {
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
     try {
-      const file_name = path.split('/')[1];
-      const stream = await this.fileService.streamStaticFile(path);
+      const segments = path?.trim().split('/')?.filter(Boolean) ?? [];
+      const tail = segments.length >= 2 ? segments[1].trim().normalize('NFD') : 'pronunciation';
+
+      const stream = await this.fileService.streamLegacyPublicPath(
+        path,
+        'pronunciations',
+      );
 
       res.set({
         'Content-Type': 'audio/webm',
-        'Content-Disposition': `inline; filename="${file_name.trim().normalize('NFD') + '.webm'}"`,
+        'Content-Disposition': `inline; filename="${basename(`${tail}.webm`).replace(/\r?\n/g, '')}"`,
         'Accept-Ranges': 'bytes',
       });
 
@@ -73,9 +79,12 @@ export class DictionaryController {
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;
-      } else {
-        throw new BadRequestException('Error retrieving audio' + error);
       }
+      throw new BadRequestException(
+        error instanceof BadRequestException
+          ? error.message
+          : 'Unable to retrieve audio.',
+      );
     }
   }
 
@@ -146,9 +155,9 @@ export class DictionaryController {
   }
 
   @Delete('delete/:id')
-  async remove(@Param('id') id: string): Promise<Word> {
+  async remove(@Param('id') id: string, @Request() req: any): Promise<Word> {
     try {
-      return await this.dictionaryService.remove(id);
+      return await this.dictionaryService.remove(id, req.user.sub);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

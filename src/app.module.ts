@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppService } from './app.service';
 import { ArticleModule } from './article/article.module';
 import { DictionaryModule } from './dictionary/dictionary.module';
@@ -28,8 +28,8 @@ import { ScheduleModule } from '@nestjs/schedule';
     }),
     ThrottlerModule.forRoot([
       {
-        ttl: 6000,
-        limit: 10,
+        ttl: 60_000,
+        limit: 200,
       },
     ]),
     ArticleModule,
@@ -42,6 +42,10 @@ import { ScheduleModule } from '@nestjs/schedule';
   providers: [
     AppService,
     PrismaService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
     {
       provide: APP_GUARD,
       useClass: AuthGuard,

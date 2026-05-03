@@ -395,6 +395,8 @@ describe('ArticleService', () => {
       categories: [],
       tags: [],
       references: [],
+      created_by: 'editor@example.com',
+      contributors: [{ id: 'user-1' }],
     });
     prisma.article.count.mockResolvedValue(0);
     prisma.file.findMany.mockResolvedValue([]);
@@ -403,6 +405,7 @@ describe('ArticleService', () => {
     userService.findUser.mockResolvedValue({
       id: 'user-1',
       email: 'editor@example.com',
+      role: 'EDITOR',
     });
     articleMetadataBackfillService.inferMetadataFromLatestVersion.mockReturnValue(
       {

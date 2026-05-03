@@ -21,7 +21,7 @@ describe('DictionaryController', () => {
     remove: AnyMock;
   };
   let fileService: {
-    streamStaticFile: AnyMock;
+    streamLegacyPublicPath: AnyMock;
   };
 
   beforeEach(async () => {
@@ -37,7 +37,7 @@ describe('DictionaryController', () => {
       remove: jest.fn<(...args: any[]) => any>(),
     };
     fileService = {
-      streamStaticFile: jest.fn<(...args: any[]) => any>(),
+      streamLegacyPublicPath: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({

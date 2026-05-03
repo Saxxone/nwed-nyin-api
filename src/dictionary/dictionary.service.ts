@@ -1,9 +1,10 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Word } from '@prisma/client';
+import { Prisma, Role, User, Word } from '@prisma/client';
 import { FileService } from 'src/file/file.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { UserService } from '../user/user.service';
@@ -17,6 +18,28 @@ export class DictionaryService {
     private readonly userService: UserService,
     private readonly fileService: FileService,
   ) {}
+
+  private readonly alive_word_filter: Prisma.WordWhereInput = {
+    deleted_at: null,
+  };
+
+  private denyDictionaryViewer(actor: Role) {
+    if (actor === Role.VIEWER) {
+      throw new ForbiddenException('Viewers cannot modify dictionary entries.');
+    }
+  }
+
+  private assertWordContributorOrAdmin(actor: User, word: Word & {
+    contributors: { id: string }[];
+  }) {
+    if (actor.role === Role.ADMIN) {
+      return;
+    }
+    if (word.contributors.some((c) => c.id === actor.id)) {
+      return;
+    }
+    throw new ForbiddenException('You cannot modify this word');
+  }
 
   private treatInvalidUndefinedNull(val: any) {
     if (
@@ -36,11 +59,12 @@ export class DictionaryService {
     try {
       const { definitions, ...wordData } = createDictionaryDto;
       const user = await this.userService.findUser(email);
+      this.denyDictionaryViewer(user.role);
       return await this.prisma.word.create({
         data: {
           ...wordData,
           contributors: {
-            connect: user,
+            connect: { id: user.id },
           },
           definitions: {
             create: definitions.map((definition) => {
@@ -91,6 +115,7 @@ export class DictionaryService {
       this.prisma.word.findMany({
         take,
         skip: skip,
+        where: this.alive_word_filter,
         ...(cursor ? { cursor: { id: cursor } } : {}),
         orderBy: { term: 'asc' },
         include: {
@@ -116,7 +141,7 @@ export class DictionaryService {
           },
         },
       }),
-      this.prisma.word.count(),
+      this.prisma.word.count({ where: this.alive_word_filter }),
       this.prisma.wordPronunciationAudio.count(),
     ]);
     return { words, totalCount, audioCount };
@@ -146,6 +171,7 @@ export class DictionaryService {
           term: {
             gte: alphabet.toLowerCase(),
           },
+          ...this.alive_word_filter,
         },
         orderBy: { term: 'asc' },
         include: {
@@ -171,7 +197,7 @@ export class DictionaryService {
           },
         },
       }),
-      this.prisma.word.count(),
+      this.prisma.word.count({ where: this.alive_word_filter }),
       this.prisma.wordPronunciationAudio.count(),
     ]);
 
@@ -182,6 +208,7 @@ export class DictionaryService {
     const word = await this.prisma.word.findFirst({
       where: {
         id: id,
+        ...this.alive_word_filter,
       },
       include: {
         pronunciation_audios: {
@@ -218,6 +245,7 @@ export class DictionaryService {
     const word = await this.prisma.word.findFirst({
       where: {
         term: term,
+        ...this.alive_word_filter,
       },
       include: {
         pronunciation_audios: {
@@ -259,9 +287,14 @@ export class DictionaryService {
   async search(term: string): Promise<Word[]> {
     return this.prisma.word.findMany({
       where: {
-        OR: [
-          { term: { contains: term } },
-          { alt_spelling: { contains: term } },
+        AND: [
+          {
+            OR: [
+              { term: { contains: term } },
+              { alt_spelling: { contains: term } },
+            ],
+          },
+          this.alive_word_filter,
         ],
       },
       include: {
@@ -288,6 +321,18 @@ export class DictionaryService {
     try {
       const user = await this.userService.findUser(email);
 
+      const existing_word = await this.prisma.word.findUnique({
+        where: { id },
+        include: { contributors: { select: { id: true } } },
+      });
+
+      if (!existing_word || existing_word.deleted_at !== null) {
+        throw new NotFoundException('Word not found');
+      }
+
+      this.denyDictionaryViewer(user.role);
+      this.assertWordContributorOrAdmin(user, existing_word);
+
       if (definitions && definitions.length > 0) {
         return await this.prisma.$transaction(async (prisma) => {
           const updated_word = await prisma.word.update({
@@ -295,7 +340,7 @@ export class DictionaryService {
             data: {
               ...wordData,
               contributors: {
-                connect: user,
+                connect: { id: user.id },
               },
             },
           });
@@ -362,10 +407,16 @@ export class DictionaryService {
       } else {
         return await this.prisma.word.update({
           where: { id },
-          data: { ...wordData, contributors: { connect: user } },
+          data: { ...wordData, contributors: { connect: { id: user.id } } },
         });
       }
     } catch (error: any) {
+      if (
+        error instanceof ForbiddenException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === 'P2002') {
           throw new BadRequestException(
@@ -376,7 +427,7 @@ export class DictionaryService {
         }
       }
       console.error('Error updating word:', error);
-      throw new BadRequestException('Failed to update word.' + error);
+      throw new BadRequestException('Failed to update word.');
     }
   }
 
@@ -397,17 +448,24 @@ export class DictionaryService {
     try {
       const user = await this.userService.findUser(email);
 
+      this.denyDictionaryViewer(user.role);
+
       const saved_sound_ids = await this.fileService.create(
         compressed_sound,
         email,
         'pronunciations',
       );
 
-      const word = await this.prisma.word.findUnique({ where: { id } });
+      const word_record = await this.prisma.word.findUnique({
+        where: { id },
+        include: { contributors: { select: { id: true } } },
+      });
 
-      if (!word) {
+      if (!word_record || word_record.deleted_at !== null) {
         throw new NotFoundException(`Word with ID ${id} not found.`);
       }
+
+      this.assertWordContributorOrAdmin(user, word_record);
 
       const updated_word = await this.prisma.word.update({
         where: { id },
@@ -433,7 +491,10 @@ export class DictionaryService {
 
       return updated_word;
     } catch (error) {
-      if (error instanceof NotFoundException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof ForbiddenException
+      ) {
         throw error;
       }
       console.error('Error updating word pronunciation:', error);
@@ -441,14 +502,23 @@ export class DictionaryService {
     }
   }
 
-  async remove(id: string): Promise<Word> {
-    const word = await this.prisma.word.delete({
+  async remove(id: string, actorEmail: string): Promise<Word> {
+    const existing = await this.prisma.word.findUnique({
       where: { id },
+      include: { contributors: { select: { id: true } } },
     });
-    if (!word) {
+
+    if (!existing) {
       throw new NotFoundException(`Word with ID ${id} not found`);
     }
 
-    return word;
+    const actor = await this.userService.findUser(actorEmail);
+    this.denyDictionaryViewer(actor.role);
+    this.assertWordContributorOrAdmin(actor, existing);
+
+    return await this.prisma.word.update({
+      where: { id },
+      data: { deleted_at: new Date() },
+    });
   }
 }

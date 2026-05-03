@@ -7,10 +7,12 @@ import {
   UseGuards,
   Get,
   UnauthorizedException,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { AuthService } from './auth.service';
 import { SignInDto } from './dto/sign-in.dto';
-import { AuthGuard, Public } from './auth.guard';
+import { AuthGuard, JwtPayload, Public } from './auth.guard';
 import { UserService } from 'src/user/user.service';
 
 @Controller('auth')
@@ -20,29 +22,29 @@ export class AuthController {
     private readonly authService: AuthService,
   ) {}
 
-  @HttpCode(HttpStatus.OK)
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('login/google')
   async googleLogin(@Body('token') token: string) {
     return await this.authService.signInGoogle(token);
   }
 
-  @HttpCode(HttpStatus.OK)
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('signup/google')
   async googleSignup(@Body('token') token: string) {
     return await this.authService.signUpGoogle(token);
   }
 
-  @HttpCode(HttpStatus.OK)
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('login')
   async signIn(@Body() signInDto: SignInDto) {
     return await this.authService.signIn(signInDto.email, signInDto.password);
   }
 
-  @HttpCode(HttpStatus.OK)
   @Public()
+  @HttpCode(HttpStatus.OK)
   @Post('refresh')
   async refresh(@Body('refresh_token') refresh_token: string) {
     if (!refresh_token) {
@@ -51,16 +53,27 @@ export class AuthController {
     return this.authService.refresh(refresh_token);
   }
 
+  /** Revokes JWT rows for bearer user (preferred logout). */
+  @UseGuards(AuthGuard)
   @HttpCode(HttpStatus.OK)
-  @Public()
   @Post('logout')
-  async signOut(@Body() signInDto: SignInDto) {
+  async logoutAuthenticated(
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<{ message: string }> {
+    return this.authService.revokeSessions(req.user.user_id);
+  }
+
+  /** Alias for tooling that still submits password logout. */
+  @Public()
+  @HttpCode(HttpStatus.OK)
+  @Post('logout/password')
+  async signOutLegacy(@Body() signInDto: SignInDto) {
     return await this.authService.signOut(signInDto.email, signInDto.password);
   }
 
   @UseGuards(AuthGuard)
   @Get('profile')
-  async getProfile(@Body('id') id: string) {
-    return await this.userService.findUser(id);
+  async getProfile(@Req() req: Request & { user: JwtPayload }) {
+    return await this.userService.findUser(req.user.user_id);
   }
 }

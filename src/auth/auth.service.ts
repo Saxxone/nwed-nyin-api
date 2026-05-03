@@ -6,16 +6,33 @@ import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import * as fs from 'fs';
-import * as https from 'https';
+import https from 'https';
+import { isIPv4 } from 'net';
 import { join } from 'path';
+import { URL } from 'url';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateFedUserDto } from 'src/user/dto/create-user.dto';
 import { UserService } from '../user/user.service';
 import { JwtPayload } from './auth.guard';
 import { jwtConstants } from './constants';
-import { AuthUser, GoogleAuthUser } from './dto/sign-in.dto';
+import { AuthUser } from './dto/sign-in.dto';
+import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 
 const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
+/** Max stored profile image download size (Google avatars stay small). */
+const PROFILE_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const PROFILE_PIC_HOST_ALLOWLIST_SUFFIXES = [
+  '.googleusercontent.com',
+  '.gstatic.com',
+];
+const PROFILE_PIC_REQUEST_MS = 12_000;
+
+function isApprovedProfilePictureHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  return PROFILE_PIC_HOST_ALLOWLIST_SUFFIXES.some((suffix) =>
+    h.endsWith(suffix),
+  );
+}
 
 @Injectable()
 export class AuthService {
@@ -23,6 +40,7 @@ export class AuthService {
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly googleIdTokenVerifier: GoogleIdTokenVerifier,
   ) {}
 
   async signIn(email: string, pass: string): Promise<Partial<AuthUser>> {
@@ -32,7 +50,7 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
-    const isPasswordValid = await bcrypt.compare(pass, user.password);
+    const isPasswordValid = await bcrypt.compare(pass, user.password ?? '');
 
     if (!isPasswordValid) {
       throw new UnauthorizedException();
@@ -46,10 +64,19 @@ export class AuthService {
     };
   }
 
-  async signOut(email: string, pass: string): Promise<any> {
+  /** Drops all bearer sessions for user (JWT rows). */
+  async revokeSessions(user_id: string): Promise<{ message: string }> {
+    await this.prisma.authToken.deleteMany({ where: { user_id } });
+    return {
+      message: 'Logged out successfully',
+    };
+  }
+
+  /** @deprecated Prefer authenticated POST /auth/logout. */
+  async signOut(email: string, pass: string): Promise<{ message: string }> {
     const user = await this.userService.findUser(email, { withPassword: true });
 
-    if (!user) {
+    if (!user?.password) {
       throw new UnauthorizedException();
     }
 
@@ -59,145 +86,123 @@ export class AuthService {
       throw new UnauthorizedException();
     }
 
+    await this.revokeSessions(user.id);
     return {
       message: 'Logged out successfully',
     };
   }
 
   async signInGoogle(token: string): Promise<Partial<AuthUser>> {
-    return await this.prisma.$transaction(async (prisma) => {
-      try {
-        const payload: GoogleAuthUser = await this.jwtService.decode(token);
+    const verified = await this.googleIdTokenVerifier.verify(token);
 
-        const user = await prisma.user.findUnique({
-          where: { email: payload.email },
-        });
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { email: verified.email },
+      });
 
-        const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
-        const default_img = process.env.DEFAULT_PROFILE_IMG;
+      const default_img = process.env.DEFAULT_PROFILE_IMG;
 
-        if (client_id !== payload.aud) {
-          throw new UnauthorizedException();
-        }
+      if (!user) {
+        throw new UnauthorizedException('Account does not exist');
+      }
 
-        if (!user) {
-          throw new UnauthorizedException('Account does not exist');
-        }
-        const { password, ...rest } = user;
-
-        if (user.img === default_img) {
-          const { url, file } = this.createImgPath();
-          await this.downloadImage(payload.picture, file);
-          await prisma.user.update({
+      let updated_row = user;
+      if (verified.picture?.trim() && user.img === default_img) {
+        const { url, file } = this.createImgPath();
+        const saved = await this.downloadProfilePicture(verified.picture, file);
+        if (saved) {
+          await this.prisma.user.update({
             where: { id: user.id },
             data: { img: url },
           });
+          updated_row =
+            (await this.prisma.user.findUnique({ where: { id: user.id } })) ??
+            user;
         }
-        return {
-          ...rest,
-          ...(await this.generateTokens(user)),
-        };
-      } catch (error) {
-        console.error('Error in signInGoogle:', error); // Important: Log the error
-        throw error;
       }
-    });
+
+      const out = { ...updated_row };
+      if (out.password) delete out.password;
+
+      return {
+        ...out,
+        ...(await this.generateTokens(user)),
+      };
+    } catch (error) {
+      console.error('Error in signInGoogle:', error);
+      throw error;
+    }
   }
 
   async signUpGoogle(token: string): Promise<Partial<AuthUser>> {
-    const payload: GoogleAuthUser = await this.jwtService.decode(token);
+    const verified = await this.googleIdTokenVerifier.verify(token);
 
     let img_url = process.env.DEFAULT_PROFILE_IMG;
 
-    const user = await this.prisma.user.findFirst({
+    const existing = await this.prisma.user.findFirst({
       where: {
-        email: payload.email,
+        email: verified.email,
       },
     });
 
-    const client_id = process.env.GOOGLE_AUTH_CLIENT_ID;
-
-    if (client_id !== payload.aud) {
-      throw new UnauthorizedException();
-    }
-
-    if (user) {
+    if (existing) {
       return this.signInGoogle(token);
-    } else {
-      //TODO enable/disable google signup with the line below
-      // throw new UnauthorizedException('Account creation currently disabled');
-      try {
-        const { url, file } = this.createImgPath();
-        await this.downloadImage(payload.picture, file);
-        img_url = url;
-      } catch (error) {
-        console.error('Error downloading or saving image:', error);
-      }
-
-      const u: CreateFedUserDto = {
-        name: payload.name,
-        email: payload.email,
-        img: img_url,
-      };
-
-      const new_user = await this.userService.createFedUser(u);
-
-      if (new_user.password) delete new_user.password;
-
-      return {
-        ...new_user,
-        ...(await this.generateTokens(new_user)),
-      };
     }
+
+    try {
+      if (verified.picture?.trim()) {
+        const { url, file } = this.createImgPath();
+        const ok = await this.downloadProfilePicture(verified.picture, file);
+        if (ok) img_url = url;
+      }
+    } catch (error) {
+      console.error('Error downloading or saving image:', error);
+    }
+
+    const u: CreateFedUserDto = {
+      name: verified.name,
+      email: verified.email,
+      img: img_url ?? process.env.DEFAULT_PROFILE_IMG ?? '',
+    };
+
+    const new_user = await this.userService.createFedUser(u);
+
+    if (new_user.password) delete new_user.password;
+
+    return {
+      ...new_user,
+      ...(await this.generateTokens(new_user)),
+    };
   }
 
-  private async updateUserProfile(
-    user: User,
-    payload: GoogleAuthUser,
-    default_img: string,
-  ): Promise<Partial<AuthUser>> {
-    if (user.img === default_img) {
-      try {
-        const { url, file } = this.createImgPath();
-        await this.downloadImage(payload.picture, file);
-        const updated_user = await this.userService.updateUser({
-          where: { id: user.id },
-          data: { img: url },
-        });
-
-        if (updated_user.password) delete updated_user.password;
-
-        return {
-          ...updated_user,
-          ...(await this.generateTokens(updated_user)),
-        };
-      } catch (error) {
-        console.error('Error downloading or saving image:', error);
-
-        if (user.password) delete user.password;
-
-        return {
-          ...user,
-          ...(await this.generateTokens(user)),
-        };
-      }
-    }
-  }
-
-  async refresh(refresh_token: string): Promise<{ access_token: string }> {
+  async refresh(
+    refresh_token: string,
+  ): Promise<{ access_token: string; refresh_token: string }> {
     try {
       const refresh_token_payload =
         await this.verifyrefresh_token(refresh_token);
 
-      const newAccessToken = await this.generateAccessToken(
-        refresh_token_payload,
-      );
-      return { access_token: newAccessToken };
+      const user = await this.prisma.user.findUnique({
+        where: { id: refresh_token_payload.user_id },
+      });
+      if (!user) throw new UnauthorizedException('Invalid refresh token');
+
+      const newAccessToken = await this.signToken(user);
+      const newRefreshToken = await this.generaterefreshToken(user);
+
+      await this.saveToken(user.id, newAccessToken, false);
+      await this.saveToken(user.id, newRefreshToken, true);
+
+      return {
+        access_token: newAccessToken,
+        refresh_token: newRefreshToken,
+      };
     } catch (error) {
       throw new UnauthorizedException(error);
     }
   }
 
+  /** Replaces access token payload path (caller should use saved rows). Kept if needed externally. */
   async generateAccessToken(payload: JwtPayload): Promise<string> {
     const newAccessToken = await this.signToken({
       id: payload.user_id,
@@ -209,12 +214,10 @@ export class AuthService {
   }
 
   async verifyrefresh_token(token: string): Promise<JwtPayload> {
-    const refresh_token_payload: JwtPayload = await this.jwtService.verifyAsync(
-      token,
-      {
+    const refresh_token_payload: JwtPayload =
+      await this.jwtService.verifyAsync(token, {
         secret: jwtConstants.refreshSecret,
-      },
-    );
+      });
 
     const storedrefresh_token = await this.prisma.authToken.findUnique({
       where: {
@@ -236,7 +239,7 @@ export class AuthService {
   }
 
   async verifyAccessToken(token: string, request: Request, is_public: boolean) {
-    const token_hash = await this.hashToken(token);
+    const incoming_hash = await this.hashToken(token);
 
     try {
       const payload: JwtPayload = await this.jwtService.verifyAsync(token, {
@@ -244,7 +247,7 @@ export class AuthService {
       });
 
       const existing_token = await this.prisma.authToken.findUnique({
-        where: { token_hash },
+        where: { token_hash: incoming_hash },
       });
 
       if (!existing_token || existing_token.user_id !== payload.user_id) {
@@ -281,6 +284,8 @@ export class AuthService {
           const access_token_expires_at = new Date(
             Date.now() + 30 * MILLISECONDS_PER_DAY,
           );
+          const new_access_hash = await this.hashToken(new_access_token);
+
           await this.prisma.authToken.upsert({
             where: {
               user_id_is_refresh_token: {
@@ -290,13 +295,14 @@ export class AuthService {
             },
             create: {
               token: new_access_token,
-              token_hash: token_hash,
+              token_hash: new_access_hash,
               user_id: refresh_token_payload.user_id,
               expires_at: access_token_expires_at,
               is_refresh_token: false,
             },
             update: {
               token: new_access_token,
+              token_hash: new_access_hash,
               expires_at: access_token_expires_at,
             },
           });
@@ -380,25 +386,94 @@ export class AuthService {
     return { url: img_path, file: join(destination, img_name) };
   }
 
-  private async downloadImage(url: string, filepath: string): Promise<void> {
+  /** Returns parsed URL only when HTTPS + allowlisted avatar host (not IP literal). */
+  private parseHttpsProfilePictureUrl(urlString: string): URL | null {
+    let parsed: URL;
     try {
-      return await new Promise((resolve, reject) => {
-        const file = fs.createWriteStream(filepath);
-        https
-          .get(url, (response) => {
-            response.pipe(file);
-            file.on('finish', () => {
-              file.close();
-              resolve();
-            });
-          })
-          .on('error', (err) => {
-            fs.unlink(filepath, () => reject(err));
-          });
-      });
-    } catch (error) {
-      console.error('Error downloading image:', error);
-      throw error;
+      parsed = new URL(urlString);
+    } catch {
+      return null;
     }
+
+    if (parsed.protocol !== 'https:') {
+      return null;
+    }
+
+    const host = parsed.hostname;
+    if (isIPv4(host) || host.startsWith('[')) {
+      return null;
+    }
+
+    if (!isApprovedProfilePictureHost(host)) {
+      return null;
+    }
+
+    return parsed;
+  }
+
+  /** Returns whether a file was written (false ⇒ caller should skip DB update). */
+  private async downloadProfilePicture(
+    urlStr: string,
+    filepath: string,
+  ): Promise<boolean> {
+    if (!urlStr?.trim()) {
+      return false;
+    }
+
+    const parsed = this.parseHttpsProfilePictureUrl(urlStr);
+    if (!parsed) return false;
+
+    return await new Promise<boolean>((resolve_dl) => {
+      const file = fs.createWriteStream(filepath);
+      let downloaded = 0;
+      let aborted = false;
+
+      const fail = () => {
+        if (aborted) return;
+        aborted = true;
+        fs.unlink(filepath, () => resolve_dl(false));
+      };
+
+      const req = https.get(
+        parsed,
+        {
+          timeout: PROFILE_PIC_REQUEST_MS,
+          headers: { 'User-Agent': 'nwed-nyin-api/1.0' },
+        },
+        (response) => {
+          const code = response.statusCode ?? 0;
+          if (code !== 200) {
+            response.resume();
+            file.close(fail);
+            return;
+          }
+
+          response.on('data', (chunk: Buffer | string) => {
+            const len = Buffer.isBuffer(chunk)
+              ? chunk.length
+              : Buffer.byteLength(String(chunk));
+            downloaded += len;
+            if (downloaded > PROFILE_IMAGE_MAX_BYTES) {
+              response.destroy();
+              file.close(fail);
+            }
+          });
+
+          response.pipe(file);
+          file.on('finish', () =>
+            file.close(() => {
+              if (!aborted) resolve_dl(true);
+            }),
+          );
+          file.on('error', fail);
+        },
+      );
+
+      req.on('error', fail);
+      req.on('timeout', () => {
+        req.destroy();
+        fail();
+      });
+    }).catch(() => false);
   }
 }

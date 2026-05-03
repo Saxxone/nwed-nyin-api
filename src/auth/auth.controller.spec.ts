@@ -16,6 +16,7 @@ describe('AuthController', () => {
     refresh: AnyMock;
     signInGoogle: AnyMock;
     signUpGoogle: AnyMock;
+    revokeSessions: AnyMock;
     signOut: AnyMock;
   };
   let userService: {
@@ -28,6 +29,7 @@ describe('AuthController', () => {
       refresh: jest.fn<(...args: any[]) => any>(),
       signInGoogle: jest.fn<(...args: any[]) => any>(),
       signUpGoogle: jest.fn<(...args: any[]) => any>(),
+      revokeSessions: jest.fn<(...args: any[]) => any>(),
       signOut: jest.fn<(...args: any[]) => any>(),
     };
     userService = {
@@ -57,12 +59,12 @@ describe('AuthController', () => {
     authService.signIn.mockResolvedValue(response);
 
     await expect(
-      controller.signIn({ email: 'editor@example.com', password: 'secret' }),
+      controller.signIn({ email: 'editor@example.com', password: 'secret12' }),
     ).resolves.toBe(response);
 
     expect(authService.signIn).toHaveBeenCalledWith(
       'editor@example.com',
-      'secret',
+      'secret12',
     );
   });
 
@@ -71,11 +73,15 @@ describe('AuthController', () => {
     expect(authService.refresh).not.toHaveBeenCalled();
   });
 
-  it('refreshes an access token when a refresh token is provided', async () => {
-    authService.refresh.mockResolvedValue({ access_token: 'new-token' });
+  it('refreshes tokens when a refresh token is provided', async () => {
+    authService.refresh.mockResolvedValue({
+      access_token: 'new-token',
+      refresh_token: 'new-refresh',
+    });
 
     await expect(controller.refresh('refresh-token')).resolves.toEqual({
       access_token: 'new-token',
+      refresh_token: 'new-refresh',
     });
 
     expect(authService.refresh).toHaveBeenCalledWith('refresh-token');
@@ -84,9 +90,20 @@ describe('AuthController', () => {
   it('returns the authenticated user profile', async () => {
     const user = { id: 'user-1', email: 'editor@example.com' };
     userService.findUser.mockResolvedValue(user);
+    const req = { user: { user_id: 'user-1', sub: 'editor@example.com' } };
 
-    await expect(controller.getProfile('user-1')).resolves.toBe(user);
+    await expect(controller.getProfile(req as any)).resolves.toBe(user);
 
     expect(userService.findUser).toHaveBeenCalledWith('user-1');
+  });
+
+  it('revokes server sessions on authenticated logout', async () => {
+    authService.revokeSessions.mockResolvedValue({ message: 'ok' });
+    const req = { user: { user_id: 'u1', sub: 'mail' } };
+
+    await expect(controller.logoutAuthenticated(req as any)).resolves.toEqual({
+      message: 'ok',
+    });
+    expect(authService.revokeSessions).toHaveBeenCalledWith('u1');
   });
 });

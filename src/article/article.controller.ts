@@ -5,7 +5,6 @@ import {
   Get,
   NotFoundException,
   Param,
-  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -14,6 +13,7 @@ import {
   StreamableFile,
 } from '@nestjs/common';
 import { Article } from '@prisma/client';
+import { basename } from 'path';
 import { Response } from 'express';
 import { Public } from '../auth/auth.guard';
 import { FileService } from '../file/file.service';
@@ -99,10 +99,11 @@ export class ArticleController {
     @Query('path') path: string,
     @Res({ passthrough: true }) res: Response,
   ): Promise<StreamableFile> {
+    const filename = basename(String(path ?? '')).replace(/\r?\n/g, '');
     res.set({
       'Content-Type': 'text/markdown',
       'Accept-Ranges': 'bytes',
-      'Content-Disposition': `inline; filename="${path}.md"`,
+      'Content-Disposition': `inline; filename="${filename}"`,
     });
     return this.fileService.streamStaticFile(path, 'articles');
   }
@@ -113,7 +114,6 @@ export class ArticleController {
     @Body() updateArticleDto: UpdateArticleDto,
     @Request() req: any,
   ): Promise<PublicArticle> {
-    console.log(req.user.sub, id);
     try {
       return await this.articleService.update(
         id,
@@ -129,9 +129,9 @@ export class ArticleController {
   }
 
   @Delete('delete/:id')
-  async remove(@Param('id', new ParseUUIDPipe()) id: string): Promise<Article> {
+  async remove(@Param('id') id: string, @Request() req: any): Promise<Article> {
     try {
-      return await this.articleService.remove(id);
+      return await this.articleService.remove(id, req.user.sub);
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

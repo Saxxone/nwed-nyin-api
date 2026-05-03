@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 import { UserModule } from 'src/user/user.module';
-import { UserService } from 'src/user/user.service';
+
 import { JwtModule } from '@nestjs/jwt';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { jwtConstants } from './constants';
@@ -17,6 +18,6 @@ import { jwtConstants } from './constants';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, PrismaService, UserService],
+  providers: [AuthService, GoogleIdTokenVerifier, PrismaService],
 })
 export class AuthModule {}

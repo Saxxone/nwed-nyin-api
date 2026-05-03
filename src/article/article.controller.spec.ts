@@ -128,16 +128,16 @@ describe('ArticleController', () => {
     fileService.streamStaticFile.mockResolvedValue(stream);
 
     await expect(
-      controller.getArticleContent('articles/post.md', response as any),
+      controller.getArticleContent('my-article-slug.md', response as any),
     ).resolves.toBe(stream);
 
     expect(response.set).toHaveBeenCalledWith({
       'Content-Type': 'text/markdown',
       'Accept-Ranges': 'bytes',
-      'Content-Disposition': 'inline; filename="articles/post.md.md"',
+      'Content-Disposition': 'inline; filename="my-article-slug.md"',
     });
     expect(fileService.streamStaticFile).toHaveBeenCalledWith(
-      'articles/post.md',
+      'my-article-slug.md',
       'articles',
     );
   });

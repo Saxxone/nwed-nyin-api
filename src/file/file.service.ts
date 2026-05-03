@@ -8,17 +8,25 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { File as FileModel, FileType, Prisma, Status } from '@prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import {
+  resolveLegacyPublicNestedPath,
+  resolvePublicFileUnderFolder,
+} from '../security/safe-static-path';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { UpdateFileDto } from './dto/update-file.dto';
 
 @Injectable()
 export class FileService {
+  private readonly public_root: string;
+
   constructor(
     private readonly userService: UserService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) {
+    this.public_root = resolve(join(__dirname, '..', '..', '..'), 'public');
+  }
 
   private readonly logger = new Logger();
 
@@ -154,13 +162,45 @@ export class FileService {
     );
   }
 
+  async streamLegacyPublicPath(
+    rawPath: string,
+    expected_folder_segment: string,
+  ): Promise<StreamableFile> {
+    let public_path: string;
+    try {
+      public_path = resolveLegacyPublicNestedPath(
+        this.public_root,
+        expected_folder_segment,
+        rawPath,
+      );
+    } catch {
+      throw new NotFoundException('file not found ');
+    }
+
+    try {
+      await fs.access(public_path, constants.F_OK);
+
+      const stream = createReadStream(public_path);
+      return new StreamableFile(stream);
+    } catch {
+      throw new NotFoundException('file not found ');
+    }
+  }
+
   async streamStaticFile(
     path: string,
-    folder?: string,
+    folder: string,
   ): Promise<StreamableFile> {
-    const public_path = folder
-      ? join(__dirname, '..', '..', '..', 'public', folder, path)
-      : join(__dirname, '..', '..', '..', path);
+    let public_path: string;
+    try {
+      public_path = resolvePublicFileUnderFolder(
+        this.public_root,
+        folder,
+        path,
+      );
+    } catch {
+      throw new NotFoundException('file not found ');
+    }
     try {
       await fs.access(public_path, constants.F_OK);
 

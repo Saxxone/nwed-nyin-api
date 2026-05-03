@@ -3,14 +3,24 @@ import {
   NotFoundException,
   NotImplementedException,
   UnauthorizedException,
+  ForbiddenException,
 } from '@nestjs/common';
-import { Article, File, FileType, Prisma, Status } from '@prisma/client';
+import {
+  Article,
+  File,
+  FileType,
+  Prisma,
+  Role,
+  Status,
+  User,
+} from '@prisma/client';
 import { existsSync } from 'fs';
 import { promises as fs } from 'fs';
 import { dirname, isAbsolute, join } from 'path';
 import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
+
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { generateArticleSummary } from './helpers/article-summary.helper';
@@ -142,6 +152,28 @@ export class ArticleService {
     private readonly fileService: FileService,
     private readonly articleMetadataBackfillService: ArticleMetadataBackfillService,
   ) {}
+
+  private denyArticleViewer(actor: Role) {
+    if (actor === Role.VIEWER) {
+      throw new ForbiddenException('Viewers cannot publish or edit articles.');
+    }
+  }
+
+  private assertArticleEditRights(
+    actor: User,
+    article: Article & { contributors: { id: string }[] },
+  ) {
+    if (actor.role === Role.ADMIN) {
+      return;
+    }
+    if (article.created_by && article.created_by === actor.email) {
+      return;
+    }
+    if (article.contributors.some((c) => c.id === actor.id)) {
+      return;
+    }
+    throw new ForbiddenException('You cannot modify this article');
+  }
 
   private toPublicArticle(article: PublicArticlePayload): PublicArticle {
     return {
@@ -712,6 +744,8 @@ export class ArticleService {
 
         if (!user) throw new UnauthorizedException('Login or create account');
 
+        this.denyArticleViewer(user.role);
+
         const sections = this.extractSectionsFromMarkdown(content);
         const generated_metadata = this.inferArticleWriteMetadata({
           title: article_data.title,
@@ -747,7 +781,7 @@ export class ArticleService {
               create: sections,
             },
             contributors: {
-              connect: user,
+              connect: { id: user.id },
             },
             created_by: email,
             updated_by: email,
@@ -759,7 +793,7 @@ export class ArticleService {
                 type: FileType.DOCUMENT,
                 url: 'articles/' + slug + '.md',
                 owner: {
-                  connect: user,
+                  connect: { id: user.id },
                 },
                 filename: slug,
                 path: 'articles/' + slug + '.md',
@@ -1062,6 +1096,9 @@ export class ArticleService {
     const existing_article = await this.prisma.article.findUnique({
       where: { id },
       include: {
+        contributors: {
+          select: { id: true },
+        },
         file: true,
         categories: {
           select: {
@@ -1090,6 +1127,9 @@ export class ArticleService {
     if (!existing_article) {
       throw new NotFoundException(`Article with id ${id} not found`);
     }
+
+    this.denyArticleViewer(user.role);
+    this.assertArticleEditRights(user, existing_article);
 
     const markdown = content ?? null;
     const sections = markdown ? this.extractSectionsFromMarkdown(markdown) : [];
@@ -1279,17 +1319,32 @@ export class ArticleService {
     return this.findOne(article.slug);
   }
 
-  async remove(id: string): Promise<Article> {
+  async remove(id: string, actorEmail: string): Promise<Article> {
     const existingArticle = await this.prisma.article.findUnique({
       where: { id },
+      include: {
+        contributors: {
+          select: { id: true },
+        },
+      },
     });
 
     if (!existingArticle) {
       throw new NotFoundException(`Article with ID ${id} not found`);
     }
 
-    return this.prisma.article.delete({
+    const actor = await this.userService.findUser(actorEmail);
+    if (!actor) throw new UnauthorizedException('Login or create account');
+
+    this.denyArticleViewer(actor.role);
+    this.assertArticleEditRights(actor, existingArticle);
+
+    return this.prisma.article.update({
       where: { id },
+      data: {
+        status: Status.DELETED,
+        deleted_at: new Date(),
+      },
     });
   }
 }

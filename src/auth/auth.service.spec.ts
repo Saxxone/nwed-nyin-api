@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import type { Mock } from 'jest-mock';
 import { AuthService } from './auth.service';
+import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 import { UserService } from '../user/user.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -23,11 +24,16 @@ describe('AuthService', () => {
   let jwtService: {
     signAsync: AnyMock;
     verifyAsync: AnyMock;
-    decode: AnyMock;
+  };
+  let googleVerifier: {
+    verify: AnyMock;
   };
   let prisma: {
     authToken: {
       upsert: AnyMock;
+      findUnique: AnyMock;
+    };
+    user: {
       findUnique: AnyMock;
     };
   };
@@ -39,11 +45,16 @@ describe('AuthService', () => {
     jwtService = {
       signAsync: jest.fn<(...args: any[]) => any>(),
       verifyAsync: jest.fn<(...args: any[]) => any>(),
-      decode: jest.fn<(...args: any[]) => any>(),
+    };
+    googleVerifier = {
+      verify: jest.fn<(...args: any[]) => any>(),
     };
     prisma = {
       authToken: {
         upsert: jest.fn<(...args: any[]) => any>(),
+        findUnique: jest.fn<(...args: any[]) => any>(),
+      },
+      user: {
         findUnique: jest.fn<(...args: any[]) => any>(),
       },
     };
@@ -54,6 +65,7 @@ describe('AuthService', () => {
         { provide: UserService, useValue: userService },
         { provide: JwtService, useValue: jwtService },
         { provide: PrismaService, useValue: prisma },
+        { provide: GoogleIdTokenVerifier, useValue: googleVerifier },
       ],
     }).compile();
 
@@ -78,19 +90,20 @@ describe('AuthService', () => {
       refresh_token: 'refresh-token',
     });
 
-    await expect(service.signIn('editor@example.com', 'secret')).resolves.toEqual(
-      {
-        id: 'user-1',
-        email: 'editor@example.com',
-        access_token: 'access-token',
-        refresh_token: 'refresh-token',
-      },
-    );
+    await expect(service.signIn('editor@example.com', 'secret')).resolves.toEqual({
+      id: 'user-1',
+      email: 'editor@example.com',
+      access_token: 'access-token',
+      refresh_token: 'refresh-token',
+    });
 
     expect(userService.findUser).toHaveBeenCalledWith('editor@example.com', {
       withPassword: true,
     });
-    expect(bcrypt.compare).toHaveBeenCalledWith('secret', 'hashed-password');
+    expect(bcrypt.compare).toHaveBeenCalledWith(
+      'secret',
+      'hashed-password',
+    );
   });
 
   it('rejects sign in when the password is invalid', async () => {
@@ -106,15 +119,27 @@ describe('AuthService', () => {
     );
   });
 
-  it('refreshes an access token from a valid refresh token', async () => {
+  it('refreshes access and rotates refresh token rows', async () => {
     jest.spyOn(service, 'verifyrefresh_token').mockResolvedValue({
       sub: 'editor@example.com',
       user_id: 'user-1',
     });
-    jest.spyOn(service, 'generateAccessToken').mockResolvedValue('new-access');
+    prisma.user.findUnique.mockResolvedValue({
+      id: 'user-1',
+      email: 'editor@example.com',
+    } as any);
+    jest.spyOn(service, 'signToken').mockResolvedValue('new-access');
+    jest
+      .spyOn(service as any, 'generaterefreshToken')
+      .mockResolvedValue('new-refresh');
+
+    prisma.authToken.upsert.mockResolvedValue({} as any);
 
     await expect(service.refresh('refresh-token')).resolves.toEqual({
       access_token: 'new-access',
+      refresh_token: 'new-refresh',
     });
+
+    expect(prisma.authToken.upsert).toHaveBeenCalled();
   });
 });

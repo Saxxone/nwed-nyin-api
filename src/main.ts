@@ -1,18 +1,28 @@
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import * as os from 'os';
+import helmet from 'helmet';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const ui_base_url = process.env.UI_BASE_URL || 'https://www.nwednyin.org';
   const app = await NestFactory.create(AppModule);
+  app.use(helmet());
+
   app.enableCors({
     origin: ui_base_url,
     credentials: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     preflightContinue: false,
   });
-  app.useGlobalPipes(new ValidationPipe());
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: false,
+      transform: true,
+      transformOptions: { enableImplicitConversion: true },
+    }),
+  );
 
   const network_interfaces = os.networkInterfaces();
   const local_network_ip = Object.values(network_interfaces)

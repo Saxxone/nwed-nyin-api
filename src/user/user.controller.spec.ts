@@ -10,17 +10,13 @@ describe('UserController', () => {
   let controller: UserController;
   let userService: {
     createUser: AnyMock;
-    findUser: AnyMock;
-    updateUser: AnyMock;
-    deleteUser: AnyMock;
+    updateAuthenticatedProfile: AnyMock;
   };
 
   beforeEach(async () => {
     userService = {
       createUser: jest.fn<(...args: any[]) => any>(),
-      findUser: jest.fn<(...args: any[]) => any>(),
-      updateUser: jest.fn<(...args: any[]) => any>(),
-      deleteUser: jest.fn<(...args: any[]) => any>(),
+      updateAuthenticatedProfile: jest.fn<(...args: any[]) => any>(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -63,15 +59,17 @@ describe('UserController', () => {
 
   it('updates users by id', async () => {
     const user = { id: 'user-1', name: 'Updated' };
-    userService.updateUser.mockResolvedValue(user);
+    userService.updateAuthenticatedProfile.mockResolvedValue(user);
+    const req = { user: { user_id: 'user-1', sub: 'e@example.com' } };
 
-    await expect(controller.updateUser('user-1', { name: 'Updated' })).resolves.toBe(
-      user,
+    await expect(
+      controller.updateUser('user-1', { name: 'Updated' }, req as any),
+    ).resolves.toBe(user);
+
+    expect(userService.updateAuthenticatedProfile).toHaveBeenCalledWith(
+      'user-1',
+      'user-1',
+      { name: 'Updated' },
     );
-
-    expect(userService.updateUser).toHaveBeenCalledWith({
-      where: { id: 'user-1' },
-      data: { name: 'Updated' },
-    });
   });
 });

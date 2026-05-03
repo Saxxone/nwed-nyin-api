@@ -1,7 +1,21 @@
 import { User } from '@prisma/client';
+import {
+  IsEmail,
+  IsNotEmpty,
+  IsString,
+  MinLength,
+  MaxLength,
+} from 'class-validator';
 
 export class SignInDto {
+  @IsEmail()
+  @IsNotEmpty()
   email: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @MinLength(8)
+  @MaxLength(72)
   password: string;
 }
 
@@ -24,4 +38,5 @@ export class GoogleAuthUser {
 
 export interface AuthUser extends User {
   access_token: string;
+  refresh_token?: string;
 }
