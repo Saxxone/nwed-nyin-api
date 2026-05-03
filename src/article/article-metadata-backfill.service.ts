@@ -1,5 +1,4 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
 import { Prisma, ReferenceType, Status } from '@prisma/client';
 import { promises as fs } from 'fs';
 import { isAbsolute, join } from 'path';
@@ -205,14 +204,6 @@ export class ArticleMetadataBackfillService {
   private readonly logger = new Logger(ArticleMetadataBackfillService.name);
 
   constructor(private readonly prisma: PrismaService) {}
-
-  @Cron('0 2 * * *')
-  async handleCron(): Promise<void> {
-    const stats = await this.backfillArticleMetadata();
-    this.logger.log(
-      `Article metadata backfill complete: processed=${stats.processed}, updated=${stats.updated}, skipped=${stats.skipped}, failed=${stats.failed}`,
-    );
-  }
 
   async backfillArticleMetadata(batch_size?: number): Promise<BackfillStats> {
     const stats: BackfillStats = {

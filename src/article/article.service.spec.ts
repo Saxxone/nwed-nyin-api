@@ -5,6 +5,7 @@ import { ArticleService } from './article.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { FileService } from '../file/file.service';
+import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 
 type AsyncPrismaMock = Mock<() => Promise<unknown>>;
 type AnyMock = Mock<(...args: any[]) => any>;
@@ -27,6 +28,34 @@ describe('ArticleService', () => {
   let userService: {
     findUser: AnyMock;
   };
+  let articleMetadataBackfillService: {
+    inferMetadataFromLatestVersion: AnyMock;
+  };
+
+  const makeArticle = (overrides: Record<string, unknown> = {}) => ({
+    id: 'article-1',
+    title: 'Title',
+    slug: 'title',
+    summary: 'Summary',
+    body: null,
+    created_at: new Date('2026-01-01T00:00:00.000Z'),
+    updated_at: new Date('2026-01-02T00:00:00.000Z'),
+    version: 1,
+    status: 'PUBLISHED',
+    categories: [{ name: 'Language' }],
+    tags: [{ name: 'ibibio' }],
+    references: [],
+    file: [],
+    metadata: null,
+    contributors: [
+      {
+        id: 'user-1',
+        name: 'Editor',
+        img: '/avatar.png',
+      },
+    ],
+    ...overrides,
+  });
 
   beforeEach(async () => {
     prisma = {
@@ -45,6 +74,13 @@ describe('ArticleService', () => {
     userService = {
       findUser: jest.fn<(...args: any[]) => any>(),
     };
+    articleMetadataBackfillService = {
+      inferMetadataFromLatestVersion: jest.fn<(...args: any[]) => any>(() => ({
+        categories: [],
+        tags: [],
+        references: [],
+      })),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -52,6 +88,10 @@ describe('ArticleService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: UserService, useValue: userService },
         { provide: FileService, useValue: {} },
+        {
+          provide: ArticleMetadataBackfillService,
+          useValue: articleMetadataBackfillService,
+        },
       ],
     }).compile();
 
@@ -90,22 +130,20 @@ describe('ArticleService', () => {
     ];
     prisma.article.findMany.mockResolvedValue(articles);
 
-    await expect(service.findAll({ skip: 5, take: 10 })).resolves.toEqual(
-      [
-        expect.objectContaining({
-          id: 'article-1',
-          categories: ['Language'],
-          tags: ['ibibio'],
-          contributors: [
-            {
-              id: 'user-1',
-              name: 'Editor',
-              img: '/avatar.png',
-            },
-          ],
-        }),
-      ],
-    );
+    await expect(service.findAll({ skip: 5, take: 10 })).resolves.toEqual([
+      expect.objectContaining({
+        id: 'article-1',
+        categories: ['Language'],
+        tags: ['ibibio'],
+        contributors: [
+          {
+            id: 'user-1',
+            name: 'Editor',
+            img: '/avatar.png',
+          },
+        ],
+      }),
+    ]);
 
     expect(prisma.article.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -156,6 +194,116 @@ describe('ArticleService', () => {
         }),
         skip: 0,
         take: 10,
+      }),
+    );
+  });
+
+  it('suggests related articles from the current article metadata', async () => {
+    const currentArticle = makeArticle({
+      id: 'current-article',
+      title: 'Ibibio Language',
+      slug: 'ibibio-language',
+      categories: [{ name: 'Language' }],
+      tags: [{ name: 'ibibio' }],
+      metadata: {
+        keywords: ['orthography'],
+        language: 'en',
+        read_time: 3,
+        complexity: null,
+      },
+    });
+    const lessRelevantArticle = makeArticle({
+      id: 'article-2',
+      title: 'Recent Culture',
+      slug: 'recent-culture',
+      created_at: new Date('2026-02-01T00:00:00.000Z'),
+      categories: [{ name: 'Culture' }],
+      tags: [],
+    });
+    const taggedArticle = makeArticle({
+      id: 'article-3',
+      title: 'Ibibio Lessons',
+      slug: 'ibibio-lessons',
+      created_at: new Date('2026-01-15T00:00:00.000Z'),
+      categories: [{ name: 'Language' }],
+      tags: [{ name: 'ibibio' }],
+    });
+
+    prisma.article.findFirst.mockResolvedValue(currentArticle);
+    prisma.article.findMany.mockResolvedValue([
+      lessRelevantArticle,
+      taggedArticle,
+    ]);
+
+    await expect(
+      service.findRelated({
+        source: 'article',
+        slug: 'ibibio-language',
+        excludeSlugs: ['already-seen'],
+        take: 2,
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({ slug: 'ibibio-lessons' }),
+      expect.objectContaining({ slug: 'recent-culture' }),
+    ]);
+
+    expect(prisma.article.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { slug: 'ibibio-language', status: 'PUBLISHED' },
+      }),
+    );
+    expect(prisma.article.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'PUBLISHED',
+          slug: { notIn: ['ibibio-language', 'already-seen'] },
+          OR: expect.arrayContaining([
+            { tags: { some: { name: { contains: 'ibibio' } } } },
+            { categories: { some: { name: { contains: 'language' } } } },
+          ]),
+        }),
+        take: 8,
+      }),
+    );
+  });
+
+  it('falls back to recent articles when word suggestions have sparse matches', async () => {
+    const fallbackArticle = makeArticle({
+      id: 'article-2',
+      title: 'Recent Article',
+      slug: 'recent-article',
+    });
+
+    prisma.article.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([fallbackArticle]);
+
+    await expect(
+      service.findRelated({
+        source: 'word',
+        terms: ['ụlọ', 'house'],
+        excludeSlugs: ['seen-article'],
+        take: 2,
+      }),
+    ).resolves.toEqual([expect.objectContaining({ slug: 'recent-article' })]);
+
+    expect(prisma.article.findMany).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        where: expect.objectContaining({
+          status: 'PUBLISHED',
+          OR: expect.arrayContaining([{ title: { contains: 'house' } }]),
+        }),
+      }),
+    );
+    expect(prisma.article.findMany).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        where: {
+          status: 'PUBLISHED',
+          slug: { notIn: ['seen-article'] },
+        },
+        take: 2,
       }),
     );
   });
@@ -244,6 +392,9 @@ describe('ArticleService', () => {
       title: 'Original Title',
       slug: 'original-title',
       file: [],
+      categories: [],
+      tags: [],
+      references: [],
     });
     prisma.article.count.mockResolvedValue(0);
     prisma.file.findMany.mockResolvedValue([]);
@@ -253,6 +404,13 @@ describe('ArticleService', () => {
       id: 'user-1',
       email: 'editor@example.com',
     });
+    articleMetadataBackfillService.inferMetadataFromLatestVersion.mockReturnValue(
+      {
+        categories: ['Language'],
+        tags: ['dictionary'],
+        references: [],
+      },
+    );
     jest
       .spyOn(service as any, 'writeMarkdownFile')
       .mockResolvedValue('/tmp/updated-title.md');
@@ -291,18 +449,44 @@ describe('ArticleService', () => {
           metadata: {
             upsert: {
               create: {
-                keywords: ['ibibio'],
+                keywords: ['ibibio', 'Culture', 'Language', 'dictionary'],
                 language: 'en',
                 read_time: 1,
                 complexity: null,
               },
               update: {
-                keywords: ['ibibio'],
+                keywords: ['ibibio', 'Culture', 'Language', 'dictionary'],
                 language: 'en',
                 read_time: 1,
                 complexity: null,
               },
             },
+          },
+          categories: {
+            set: [],
+            connectOrCreate: [
+              {
+                where: { name: 'Culture' },
+                create: { name: 'Culture' },
+              },
+              {
+                where: { name: 'Language' },
+                create: { name: 'Language' },
+              },
+            ],
+          },
+          tags: {
+            set: [],
+            connectOrCreate: [
+              {
+                where: { name: 'ibibio' },
+                create: { name: 'ibibio' },
+              },
+              {
+                where: { name: 'dictionary' },
+                create: { name: 'dictionary' },
+              },
+            ],
           },
         }),
       }),

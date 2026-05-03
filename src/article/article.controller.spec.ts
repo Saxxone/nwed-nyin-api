@@ -13,6 +13,7 @@ describe('ArticleController', () => {
     create: AnyMock;
     findAll: AnyMock;
     search: AnyMock;
+    findRelated: AnyMock;
     findOne: AnyMock;
     update: AnyMock;
     remove: AnyMock;
@@ -26,6 +27,7 @@ describe('ArticleController', () => {
       create: jest.fn<(...args: any[]) => any>(),
       findAll: jest.fn<(...args: any[]) => any>(),
       search: jest.fn<(...args: any[]) => any>(),
+      findRelated: jest.fn<(...args: any[]) => any>(),
       findOne: jest.fn<(...args: any[]) => any>(),
       update: jest.fn<(...args: any[]) => any>(),
       remove: jest.fn<(...args: any[]) => any>(),
@@ -63,14 +65,36 @@ describe('ArticleController', () => {
   it('trims article search terms and applies pagination defaults', async () => {
     articleService.search.mockResolvedValue([]);
 
-    await expect(controller.search('  title  ', undefined, 25)).resolves.toEqual(
-      [],
-    );
+    await expect(
+      controller.search('  title  ', undefined, 25),
+    ).resolves.toEqual([]);
 
     expect(articleService.search).toHaveBeenCalledWith({
       term: 'title',
       skip: 0,
       take: 25,
+    });
+  });
+
+  it('fetches related articles from article or word context', async () => {
+    articleService.findRelated.mockResolvedValue([]);
+
+    await expect(
+      controller.findRelated(
+        'word',
+        undefined,
+        'culture, ibibio',
+        'seen-one,seen-two',
+        3,
+      ),
+    ).resolves.toEqual([]);
+
+    expect(articleService.findRelated).toHaveBeenCalledWith({
+      source: 'word',
+      slug: undefined,
+      terms: ['culture', ' ibibio'],
+      excludeSlugs: ['seen-one', 'seen-two'],
+      take: 3,
     });
   });
 

@@ -63,6 +63,31 @@ export class ArticleController {
   }
 
   @Public()
+  @Get('related')
+  findRelated(
+    @Query('source') source: 'article' | 'word' = 'article',
+    @Query('slug') slug?: string,
+    @Query('terms') terms?: string | string[],
+    @Query('excludeSlugs') excludeSlugs?: string | string[],
+    @Query('take') take?: number,
+  ): Promise<PublicArticle[]> {
+    const normalized_terms = Array.isArray(terms)
+      ? terms
+      : terms?.split(',') || [];
+    const excluded_slugs = Array.isArray(excludeSlugs)
+      ? excludeSlugs
+      : excludeSlugs?.split(',') || [];
+
+    return this.articleService.findRelated({
+      source,
+      slug: slug?.trim(),
+      terms: normalized_terms,
+      excludeSlugs: excluded_slugs,
+      take: Number(take) || 5,
+    });
+  }
+
+  @Public()
   @Get('article/:slug')
   findOne(@Param('slug') slug: string): Promise<PublicArticle> {
     return this.articleService.findOne(slug);

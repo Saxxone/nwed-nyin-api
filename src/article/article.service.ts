@@ -14,6 +14,7 @@ import { UserService } from '../user/user.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { generateArticleSummary } from './helpers/article-summary.helper';
+import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 
 const public_article_select = {
   id: true,
@@ -94,6 +95,26 @@ type PublicArticleMedia = Pick<
   | 'alt_text'
 >;
 
+type ArticleReferenceWrite = {
+  type: Prisma.ReferenceCreateWithoutArticleInput['type'];
+  citation: string;
+  url?: string | null;
+  doi?: string | null;
+  isbn?: string | null;
+  authors?: Prisma.InputJsonValue | null;
+  publisher?: string | null;
+  year?: number | null;
+  access_date?: string | Date | null;
+};
+type ArticleMetadataWrite = NonNullable<CreateArticleDto['metadata']>;
+
+type GeneratedArticleMetadata = {
+  categories: string[];
+  tags: string[];
+  references: ArticleReferenceWrite[];
+  metadata: Prisma.ArticleMetadataCreateWithoutArticleInput;
+};
+
 export type PublicArticle = {
   id: string;
   title: string;
@@ -111,12 +132,15 @@ export type PublicArticle = {
   contributors: PublicArticlePayload['contributors'];
 };
 
+type RelatedArticleSource = 'article' | 'word';
+
 @Injectable()
 export class ArticleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly userService: UserService,
     private readonly fileService: FileService,
+    private readonly articleMetadataBackfillService: ArticleMetadataBackfillService,
   ) {}
 
   private toPublicArticle(article: PublicArticlePayload): PublicArticle {
@@ -264,6 +288,141 @@ export class ArticleService {
     );
   }
 
+  private async toPublicArticlesWithFallbacks(
+    articles: PublicArticlePayload[],
+  ): Promise<PublicArticle[]> {
+    const articles_with_fallbacks =
+      await this.withMarkdownImageFallbacks<PublicArticlePayload>(articles);
+
+    return articles_with_fallbacks.map((article) =>
+      this.toPublicArticle(article),
+    );
+  }
+
+  private normalizeSuggestionTerm(term?: unknown): string | null {
+    if (typeof term !== 'string') return null;
+
+    const normalized_term = term.trim().toLowerCase();
+    return normalized_term.length >= 2 ? normalized_term : null;
+  }
+
+  private normalizeSuggestionTerms(terms: unknown[]): string[] {
+    return Array.from(
+      new Set(
+        terms
+          .flatMap((term) => {
+            if (Array.isArray(term)) return term;
+            return [term];
+          })
+          .map((term) => this.normalizeSuggestionTerm(term))
+          .filter((term): term is string => Boolean(term)),
+      ),
+    ).slice(0, 20);
+  }
+
+  private readKeywordTerms(keywords?: unknown): string[] {
+    if (!keywords) return [];
+
+    if (Array.isArray(keywords)) {
+      return keywords.filter(
+        (keyword): keyword is string => typeof keyword === 'string',
+      );
+    }
+
+    if (typeof keywords === 'object') {
+      return Object.values(keywords as Record<string, unknown>).filter(
+        (keyword): keyword is string => typeof keyword === 'string',
+      );
+    }
+
+    return [];
+  }
+
+  private buildRelatedArticleWhere({
+    terms,
+    excludeSlug,
+    excludeSlugs = [],
+    includeContentFields = true,
+  }: {
+    terms: string[];
+    excludeSlug?: string;
+    excludeSlugs?: string[];
+    includeContentFields?: boolean;
+  }): Prisma.ArticleWhereInput {
+    const excluded_slugs = Array.from(
+      new Set([...(excludeSlug ? [excludeSlug] : []), ...excludeSlugs]),
+    );
+    const term_filters = terms.flatMap((term) => [
+      ...(includeContentFields
+        ? [
+            { title: { contains: term } },
+            { summary: { contains: term } },
+            { slug: { contains: term } },
+          ]
+        : []),
+      {
+        tags: {
+          some: {
+            name: { contains: term },
+          },
+        },
+      },
+      {
+        categories: {
+          some: {
+            name: { contains: term },
+          },
+        },
+      },
+      ...(includeContentFields
+        ? [
+            {
+              sections: {
+                some: {
+                  OR: [
+                    { title: { contains: term } },
+                    { content: { contains: term } },
+                  ],
+                },
+              },
+            },
+          ]
+        : []),
+    ]);
+
+    return {
+      status: Status.PUBLISHED,
+      ...(excluded_slugs.length ? { slug: { notIn: excluded_slugs } } : {}),
+      OR: term_filters,
+    };
+  }
+
+  private scoreRelatedArticle(article: PublicArticlePayload, terms: string[]) {
+    const searchable_text = [
+      article.title,
+      article.summary,
+      article.slug,
+      ...article.categories.map((category) => category.name),
+      ...article.tags.map((tag) => tag.name),
+      ...this.readKeywordTerms(article.metadata?.keywords),
+    ]
+      .join(' ')
+      .toLowerCase();
+
+    return terms.reduce((score, term) => {
+      if (!searchable_text.includes(term)) return score;
+
+      const tag_match = article.tags.some((tag) =>
+        tag.name.toLowerCase().includes(term),
+      );
+      const category_match = article.categories.some((category) =>
+        category.name.toLowerCase().includes(term),
+      );
+
+      return score + (tag_match ? 3 : 0) + (category_match ? 2 : 0) + 1;
+    }, 0);
+  }
+
   private async slugify(
     title: string,
     ignore_article_id?: string,
@@ -330,6 +489,169 @@ export class ArticleService {
     return sections;
   }
 
+  private inferArticleWriteMetadata({
+    title,
+    markdown,
+    categories,
+    tags,
+    references,
+    metadata,
+  }: {
+    title: string;
+    markdown: string;
+    categories?: string[];
+    tags?: string[];
+    references?: ArticleReferenceWrite[];
+    metadata?: ArticleMetadataWrite;
+  }): GeneratedArticleMetadata {
+    const inferred =
+      this.articleMetadataBackfillService.inferMetadataFromLatestVersion(
+        title,
+        {
+          title,
+          markdown,
+        },
+      );
+    const merged_categories = this.uniqueNames([
+      ...(categories ?? []),
+      ...inferred.categories,
+    ]);
+    const merged_tags = this.uniqueNames([...(tags ?? []), ...inferred.tags]);
+    const merged_references = this.uniqueReferences([
+      ...(references ?? []),
+      ...inferred.references,
+    ]);
+
+    return {
+      categories: merged_categories,
+      tags: merged_tags,
+      references: merged_references,
+      metadata: this.buildArticleMetadata(
+        markdown,
+        merged_categories,
+        merged_tags,
+        metadata,
+      ),
+    };
+  }
+
+  private buildArticleMetadata(
+    markdown: string,
+    categories: string[],
+    tags: string[],
+    metadata?: ArticleMetadataWrite,
+  ): Prisma.ArticleMetadataCreateWithoutArticleInput {
+    return {
+      keywords: this.uniqueNames([
+        ...(metadata?.keywords ?? []),
+        ...categories,
+        ...tags,
+      ]),
+      language: metadata?.language ?? 'en',
+      read_time: metadata?.read_time ?? this.estimateReadTime(markdown),
+      complexity: metadata?.complexity ?? null,
+    };
+  }
+
+  private estimateReadTime(markdown: string): number {
+    const word_count = markdown
+      .replace(/```[\s\S]*?```/g, ' ')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/[^\p{L}\p{N}'-]+/gu, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean).length;
+
+    return Math.max(1, Math.ceil(word_count / 200));
+  }
+
+  private uniqueNames(names: Array<string | null | undefined>): string[] {
+    const normalized = names
+      .map((name) => name?.trim())
+      .filter((name): name is string => Boolean(name))
+      .map((name) => name.replace(/\s+/g, ' '));
+
+    return Array.from(
+      new Map(normalized.map((name) => [name.toLowerCase(), name])).values(),
+    );
+  }
+
+  private uniqueNewNames(
+    names: string[],
+    existing_names: Array<{ name: string }>,
+  ): string[] {
+    const existing = new Set(
+      existing_names.map((name) => name.name.toLowerCase()),
+    );
+
+    return this.uniqueNames(names).filter(
+      (name) => !existing.has(name.toLowerCase()),
+    );
+  }
+
+  private uniqueReferences(
+    references: ArticleReferenceWrite[],
+  ): ArticleReferenceWrite[] {
+    return Array.from(
+      new Map(
+        references.map((reference) => [
+          this.referenceKey(reference),
+          reference,
+        ]),
+      ).values(),
+    );
+  }
+
+  private referenceKey(reference: {
+    citation: string;
+    url?: string | null;
+    doi?: string | null;
+    isbn?: string | null;
+  }): string {
+    return (
+      reference.url?.toLowerCase() ||
+      reference.doi?.toLowerCase() ||
+      reference.isbn?.replace(/[-\s]/g, '').toLowerCase() ||
+      reference.citation.toLowerCase()
+    );
+  }
+
+  private uniqueNewReferences(
+    references: ArticleReferenceWrite[],
+    existing_references: Array<{
+      citation: string;
+      url: string | null;
+      doi: string | null;
+      isbn: string | null;
+    }>,
+  ): ArticleReferenceWrite[] {
+    const existing = new Set(
+      existing_references.map((reference) => this.referenceKey(reference)),
+    );
+
+    return this.uniqueReferences(references).filter(
+      (reference) => !existing.has(this.referenceKey(reference)),
+    );
+  }
+
+  private mapReferenceCreate(
+    reference: ArticleReferenceWrite,
+  ): Prisma.ReferenceCreateWithoutArticleInput {
+    return {
+      type: reference.type,
+      citation: reference.citation,
+      url: reference.url,
+      doi: reference.doi,
+      isbn: reference.isbn,
+      authors: reference.authors ?? undefined,
+      publisher: reference.publisher,
+      year: reference.year,
+      access_date: reference.access_date
+        ? new Date(reference.access_date)
+        : new Date(),
+    };
+  }
+
   private async writeMarkdownFile(
     slug: string,
     content: string,
@@ -391,6 +713,14 @@ export class ArticleService {
         if (!user) throw new UnauthorizedException('Login or create account');
 
         const sections = this.extractSectionsFromMarkdown(content);
+        const generated_metadata = this.inferArticleWriteMetadata({
+          title: article_data.title,
+          markdown: content,
+          categories: article_data.categories,
+          tags: article_data.tags,
+          references: article_data.references,
+          metadata: article_data.metadata,
+        });
         const media_file_ids = this.getArticleMediaFileIds(
           article_media_contents,
         );
@@ -436,23 +766,23 @@ export class ArticleService {
               },
               connect: owned_media_file_ids.map((id) => ({ id })),
             },
-            metadata: article_data.metadata
-              ? { create: article_data.metadata }
-              : undefined,
+            metadata: {
+              create: generated_metadata.metadata,
+            },
             categories: {
-              connectOrCreate:
-                article_data.categories?.map((category) => ({
+              connectOrCreate: generated_metadata.categories.map(
+                (category) => ({
                   where: { name: category },
                   create: { name: category },
-                })) || [],
+                }),
+              ),
             },
 
             tags: {
-              connectOrCreate:
-                article_data.tags?.map((tag) => ({
-                  where: { name: tag },
-                  create: { name: tag },
-                })) || [],
+              connectOrCreate: generated_metadata.tags.map((tag) => ({
+                where: { name: tag },
+                create: { name: tag },
+              })),
             },
 
             versions: {
@@ -468,18 +798,9 @@ export class ArticleService {
             },
 
             references: {
-              create:
-                article_data.references?.map((reference) => ({
-                  type: reference.type,
-                  citation: reference.citation,
-                  url: reference.url,
-                  doi: reference.doi,
-                  isbn: reference.isbn,
-                  authors: reference.authors,
-                  publisher: reference.publisher,
-                  year: reference.year,
-                  access_date: reference.access_date,
-                })) || [],
+              create: generated_metadata.references.map((reference) =>
+                this.mapReferenceCreate(reference),
+              ),
             },
           },
         });
@@ -522,12 +843,7 @@ export class ArticleService {
       select: public_article_select,
     });
 
-    const articles_with_fallbacks =
-      await this.withMarkdownImageFallbacks<PublicArticlePayload>(articles);
-
-    return articles_with_fallbacks.map((article) =>
-      this.toPublicArticle(article),
-    );
+    return this.toPublicArticlesWithFallbacks(articles);
   }
 
   async search({
@@ -584,12 +900,105 @@ export class ArticleService {
       select: public_article_select,
     });
 
-    const articles_with_fallbacks =
-      await this.withMarkdownImageFallbacks<PublicArticlePayload>(articles);
+    return this.toPublicArticlesWithFallbacks(articles);
+  }
 
-    return articles_with_fallbacks.map((article) =>
-      this.toPublicArticle(article),
-    );
+  async findRelated({
+    source,
+    slug,
+    terms = [],
+    excludeSlugs = [],
+    take,
+  }: {
+    source: RelatedArticleSource;
+    slug?: string;
+    terms?: string[];
+    excludeSlugs?: string[];
+    take: number;
+  }): Promise<PublicArticle[]> {
+    let exclude_slug = slug;
+    let suggestion_terms = this.normalizeSuggestionTerms(terms);
+    const excluded_slugs = this.normalizeSuggestionTerms(excludeSlugs);
+
+    if (source === 'article' && slug) {
+      const current_article = await this.prisma.article.findFirst({
+        where: { slug, status: Status.PUBLISHED },
+        select: public_article_select,
+      });
+
+      if (!current_article) {
+        throw new NotFoundException(`Article with slug ${slug} not found`);
+      }
+
+      exclude_slug = current_article.slug;
+      suggestion_terms = this.normalizeSuggestionTerms([
+        ...suggestion_terms,
+        ...current_article.categories.map((category) => category.name),
+        ...current_article.tags.map((tag) => tag.name),
+        ...this.readKeywordTerms(current_article.metadata?.keywords),
+      ]);
+    }
+
+    const candidates = suggestion_terms.length
+      ? await this.prisma.article.findMany({
+          where: this.buildRelatedArticleWhere({
+            terms: suggestion_terms,
+            excludeSlug: exclude_slug,
+            excludeSlugs: excluded_slugs,
+            includeContentFields: source === 'word',
+          }),
+          take: Math.max(take * 4, take),
+          orderBy: {
+            created_at: 'desc',
+          },
+          select: public_article_select,
+        })
+      : [];
+
+    const ranked_candidates = candidates
+      .map((article) => ({
+        article,
+        score: this.scoreRelatedArticle(article, suggestion_terms),
+      }))
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        return (
+          right.article.created_at.getTime() - left.article.created_at.getTime()
+        );
+      })
+      .map(({ article }) => article);
+
+    const selected = ranked_candidates.slice(0, take);
+    const selected_slugs = new Set(selected.map((article) => article.slug));
+
+    if (selected.length < take) {
+      const fallback_excluded_slugs = [
+        ...(exclude_slug ? [exclude_slug] : []),
+        ...excluded_slugs,
+        ...Array.from(selected_slugs),
+      ];
+      const fallback_articles = await this.prisma.article.findMany({
+        where: {
+          status: Status.PUBLISHED,
+          ...(fallback_excluded_slugs.length
+            ? {
+                slug: {
+                  notIn: fallback_excluded_slugs,
+                },
+              }
+            : {}),
+        },
+        take: take - selected.length,
+        orderBy: {
+          created_at: 'desc',
+        },
+        select: public_article_select,
+      });
+
+      selected.push(...fallback_articles);
+    }
+
+    return this.toPublicArticlesWithFallbacks(selected);
   }
 
   async findOne(slug: string): Promise<PublicArticle> {
@@ -654,6 +1063,24 @@ export class ArticleService {
       where: { id },
       include: {
         file: true,
+        categories: {
+          select: {
+            name: true,
+          },
+        },
+        tags: {
+          select: {
+            name: true,
+          },
+        },
+        references: {
+          select: {
+            citation: true,
+            url: true,
+            doi: true,
+            isbn: true,
+          },
+        },
       },
     });
 
@@ -689,6 +1116,17 @@ export class ArticleService {
     if (should_update_markdown && !markdown_path) {
       throw new NotImplementedException('Error updating markdown file');
     }
+
+    const generated_metadata = should_update_markdown
+      ? this.inferArticleWriteMetadata({
+          title: next_title,
+          markdown,
+          categories,
+          tags,
+          references,
+          metadata,
+        })
+      : null;
 
     const update_data: Prisma.ArticleUpdateInput = {
       title: next_title,
@@ -730,45 +1168,82 @@ export class ArticleService {
     if (categories) {
       update_data.categories = {
         set: [],
-        connectOrCreate: categories.map((category) => ({
-          where: { name: category },
-          create: { name: category },
-        })),
+        connectOrCreate: (generated_metadata?.categories ?? categories).map(
+          (category) => ({
+            where: { name: category },
+            create: { name: category },
+          }),
+        ),
       };
+    } else if (generated_metadata?.categories.length) {
+      const new_categories = this.uniqueNewNames(
+        generated_metadata.categories,
+        existing_article.categories,
+      );
+
+      if (new_categories.length) {
+        update_data.categories = {
+          connectOrCreate: new_categories.map((category) => ({
+            where: { name: category },
+            create: { name: category },
+          })),
+        };
+      }
     }
 
     if (tags) {
       update_data.tags = {
         set: [],
-        connectOrCreate: tags.map((tag) => ({
+        connectOrCreate: (generated_metadata?.tags ?? tags).map((tag) => ({
           where: { name: tag },
           create: { name: tag },
         })),
       };
+    } else if (generated_metadata?.tags.length) {
+      const new_tags = this.uniqueNewNames(
+        generated_metadata.tags,
+        existing_article.tags,
+      );
+
+      if (new_tags.length) {
+        update_data.tags = {
+          connectOrCreate: new_tags.map((tag) => ({
+            where: { name: tag },
+            create: { name: tag },
+          })),
+        };
+      }
     }
 
     if (references) {
       update_data.references = {
         deleteMany: {},
-        create: references.map((reference) => ({
-          type: reference.type,
-          citation: reference.citation,
-          url: reference.url,
-          doi: reference.doi,
-          isbn: reference.isbn,
-          authors: reference.authors,
-          publisher: reference.publisher,
-          year: reference.year,
-          access_date: reference.access_date,
-        })),
+        create: (generated_metadata?.references ?? references).map(
+          (reference) => this.mapReferenceCreate(reference),
+        ),
       };
+    } else if (generated_metadata?.references.length) {
+      const new_references = this.uniqueNewReferences(
+        generated_metadata.references,
+        existing_article.references,
+      );
+
+      if (new_references.length) {
+        update_data.references = {
+          create: new_references.map((reference) =>
+            this.mapReferenceCreate(reference),
+          ),
+        };
+      }
     }
 
-    if (metadata) {
+    if (metadata || generated_metadata) {
+      const next_metadata = generated_metadata?.metadata ?? metadata;
+
       update_data.metadata = {
         upsert: {
-          create: metadata,
-          update: metadata,
+          create: next_metadata,
+          update: next_metadata,
         },
       };
     }
