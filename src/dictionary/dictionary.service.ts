@@ -319,8 +319,11 @@ export class DictionaryService {
     updateDictionaryDto: UpdateDictionaryDto,
     email: string,
   ): Promise<Word> {
-    const { definitions, pronunciation_audios, ...wordData } =
-      updateDictionaryDto;
+    const {
+      definitions,
+      pronunciation_audios: _pronunciation_audios,
+      ...wordData
+    } = updateDictionaryDto;
     try {
       const user = await this.userService.findUser(email);
 
