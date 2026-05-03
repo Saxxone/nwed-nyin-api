@@ -128,7 +128,7 @@ model Tag {
 model Reference {
   id          String        @id @default(cuid())
   type        ReferenceType @default(WEBSITE)
-  citation    String
+  citation    String        @db.Text
   url         String?
   doi         String? // Digital Object Identifier
   isbn        String? // For book references
