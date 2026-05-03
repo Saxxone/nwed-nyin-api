@@ -1,30 +1,35 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { DictionaryService } from './dictionary.service';
+import { beforeEach, describe, expect, it, jest } from '@jest/globals';
+import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
-import { FileService } from '../file/file.service';
+import { DictionaryService } from './dictionary.service';
+
+type AnyMock = jest.Mock<any>;
 
 describe('DictionaryService', () => {
   let service: DictionaryService;
   let prisma: {
-    $transaction: jest.Mock;
+    $queryRaw: AnyMock;
     word: {
-      findMany: jest.Mock;
-      count: jest.Mock;
+      findMany: AnyMock;
+      findFirst: AnyMock;
+      count: AnyMock;
     };
     wordPronunciationAudio: {
-      count: jest.Mock;
+      count: AnyMock;
     };
     partOfSpeech: {
-      findMany: jest.Mock;
+      findMany: AnyMock;
     };
   };
 
   beforeEach(async () => {
     prisma = {
-      $transaction: jest.fn(),
+      $queryRaw: jest.fn(),
       word: {
         findMany: jest.fn(),
+        findFirst: jest.fn(),
         count: jest.fn(),
       },
       wordPronunciationAudio: {
@@ -52,25 +57,57 @@ describe('DictionaryService', () => {
   });
 
   it('finds words with pagination and counts', async () => {
-    const response = [[{ id: 'word-1', term: 'ụlọ' }], 1, 0];
-    prisma.$transaction.mockResolvedValue(response);
+    const words = [{ id: 'word-1', term: 'ụlọ' }];
+    prisma.$queryRaw.mockResolvedValue([{ id: 'word-1' }]);
+    prisma.word.findMany.mockResolvedValue(words);
+    prisma.word.count.mockResolvedValue(1);
+    prisma.wordPronunciationAudio.count.mockResolvedValue(0);
 
     await expect(
       service.findAll({ cursor: 'undefined', skip: 0, take: 50 }),
     ).resolves.toEqual({
-      words: response[0],
+      words,
       totalCount: 1,
       audioCount: 0,
     });
 
+    expect(prisma.$queryRaw).toHaveBeenCalledTimes(1);
     expect(prisma.word.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        take: 50,
-        skip: 0,
-        orderBy: [{ term: 'asc' }, { id: 'asc' }],
+        where: {
+          id: { in: ['word-1'] },
+          deleted_at: null,
+        },
       }),
     );
-    expect(prisma.word.findMany.mock.calls[0][0]).not.toHaveProperty('cursor');
+    expect(prisma.word.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('uses a normalized cursor sort for subsequent dictionary pages', async () => {
+    prisma.word.findFirst.mockResolvedValue({ id: 'cursor-1', term: 'Aba' });
+    prisma.$queryRaw.mockResolvedValue([{ id: 'word-2' }, { id: 'word-1' }]);
+    prisma.word.findMany.mockResolvedValue([
+      { id: 'word-1', term: 'aafo' },
+      { id: 'word-2', term: 'abakpa' },
+    ]);
+    prisma.word.count.mockResolvedValue(2);
+    prisma.wordPronunciationAudio.count.mockResolvedValue(0);
+
+    await expect(
+      service.findAll({ cursor: 'cursor-1', skip: 0, take: 2 }),
+    ).resolves.toEqual({
+      words: [
+        { id: 'word-2', term: 'abakpa' },
+        { id: 'word-1', term: 'aafo' },
+      ],
+      totalCount: 2,
+      audioCount: 0,
+    });
+
+    expect(prisma.word.findFirst).toHaveBeenCalledWith({
+      where: { id: 'cursor-1', deleted_at: null },
+      select: { id: true, term: true },
+    });
   });
 
   it('fetches parts of speech', async () => {

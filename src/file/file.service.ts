@@ -10,7 +10,7 @@ import {
   FileType,
   Prisma,
   Status,
-} from 'src/generated/prisma/client';
+} from '../generated/prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
 import { join, resolve } from 'path';

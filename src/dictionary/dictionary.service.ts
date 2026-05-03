@@ -4,9 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, Role, User, Word } from 'src/generated/prisma/client';
-import { FileService } from 'src/file/file.service';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { FileService } from '../file/file.service';
+import { Prisma, Role, User, Word } from '../generated/prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
@@ -22,6 +22,29 @@ export class DictionaryService {
   private readonly alive_word_filter: Prisma.WordWhereInput = {
     deleted_at: null,
   };
+
+  private readonly word_include = {
+    pronunciation_audios: {
+      select: {
+        id: true,
+        format: true,
+        file: {
+          select: {
+            id: true,
+            url: true,
+          },
+        },
+      },
+    },
+    definitions: {
+      include: {
+        part_of_speech: true,
+        examples: true,
+        synonyms: true,
+        antonyms: true,
+      },
+    },
+  } satisfies Prisma.WordInclude;
 
   private denyDictionaryViewer(actor: Role) {
     if (actor === Role.VIEWER) {
@@ -52,6 +75,76 @@ export class DictionaryService {
       return undefined;
     }
     return val.trim();
+  }
+
+  private async findSortedWordIds({
+    alphabet,
+    cursor,
+    skip,
+    take,
+  }: {
+    alphabet?: string;
+    cursor?: string;
+    skip?: number;
+    take?: number;
+  }): Promise<string[]> {
+    const safeSkip =
+      typeof skip === 'number' && Number.isFinite(skip) ? Math.max(0, skip) : 0;
+    const safeTake =
+      typeof take === 'number' && Number.isFinite(take)
+        ? Math.max(0, take)
+        : 50;
+    const cursor_word = cursor
+      ? await this.prisma.word.findFirst({
+          where: { id: cursor, ...this.alive_word_filter },
+          select: { id: true, term: true },
+        })
+      : null;
+    const alphabet_filter = alphabet
+      ? Prisma.sql`AND LOWER(\`term\`) >= LOWER(${alphabet})`
+      : Prisma.empty;
+    const cursor_filter = cursor_word
+      ? Prisma.sql`
+        AND (
+          LOWER(\`term\`) > LOWER(${cursor_word.term})
+          OR (
+            LOWER(\`term\`) = LOWER(${cursor_word.term})
+            AND \`term\` > ${cursor_word.term}
+          )
+          OR (
+            LOWER(\`term\`) = LOWER(${cursor_word.term})
+            AND \`term\` = ${cursor_word.term}
+            AND \`id\` > ${cursor_word.id}
+          )
+        )
+      `
+      : Prisma.empty;
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+      SELECT \`id\`
+      FROM \`Word\`
+      WHERE \`deleted_at\` IS NULL
+      ${alphabet_filter}
+      ${cursor_filter}
+      ORDER BY LOWER(\`term\`) ASC, \`term\` ASC, \`id\` ASC
+      LIMIT ${safeTake}
+      OFFSET ${safeSkip}
+    `);
+    return rows.map((row) => row.id);
+  }
+
+  private async findWordsBySortedIds(ids: string[]): Promise<Word[]> {
+    if (ids.length === 0) return [];
+    const order = new Map(ids.map((id, index) => [id, index]));
+    const words = await this.prisma.word.findMany({
+      where: {
+        id: { in: ids },
+        ...this.alive_word_filter,
+      },
+      include: this.word_include,
+    });
+    return words.sort(
+      (left, right) => (order.get(left.id) ?? 0) - (order.get(right.id) ?? 0),
+    );
   }
 
   async create(
@@ -116,39 +209,12 @@ export class DictionaryService {
     const safeSkip =
       typeof skip === 'number' && Number.isFinite(skip) ? Math.max(0, skip) : 0;
 
-    const [words, totalCount, audioCount] = await this.prisma.$transaction([
-      this.prisma.word.findMany({
-        take,
-        skip: cursor ? 1 + safeSkip : safeSkip,
-        where: this.alive_word_filter,
-        ...(cursor ? { cursor: { id: cursor } } : {}),
-        orderBy: [{ term: 'asc' }, { id: 'asc' }],
-        include: {
-          pronunciation_audios: {
-            select: {
-              id: true,
-              format: true,
-              file: {
-                select: {
-                  id: true,
-                  url: true,
-                },
-              },
-            },
-          },
-          definitions: {
-            include: {
-              part_of_speech: true,
-              examples: true,
-              synonyms: true,
-              antonyms: true,
-            },
-          },
-        },
-      }),
+    const [ids, totalCount, audioCount] = await Promise.all([
+      this.findSortedWordIds({ cursor, skip: safeSkip, take }),
       this.prisma.word.count({ where: this.alive_word_filter }),
       this.prisma.wordPronunciationAudio.count(),
     ]);
+    const words = await this.findWordsBySortedIds(ids);
     return { words, totalCount, audioCount };
   }
 
@@ -167,44 +233,16 @@ export class DictionaryService {
   }): Promise<{ words: Word[]; totalCount: number; audioCount: number }> {
     cursor = this.treatInvalidUndefinedNull(cursor);
 
-    const [words, totalCount, audioCount] = await this.prisma.$transaction([
-      this.prisma.word.findMany({
-        ...(cursor ? { cursor: { id: cursor } } : {}),
-        skip: cursor ? 1 : 0,
+    const [ids, totalCount, audioCount] = await Promise.all([
+      this.findSortedWordIds({
+        alphabet: alphabet.toLowerCase(),
+        cursor,
         take,
-        where: {
-          term: {
-            gte: alphabet.toLowerCase(),
-          },
-          ...this.alive_word_filter,
-        },
-        orderBy: [{ term: 'asc' }, { id: 'asc' }],
-        include: {
-          pronunciation_audios: {
-            select: {
-              id: true,
-              format: true,
-              file: {
-                select: {
-                  id: true,
-                  url: true,
-                },
-              },
-            },
-          },
-          definitions: {
-            include: {
-              part_of_speech: true,
-              examples: true,
-              synonyms: true,
-              antonyms: true,
-            },
-          },
-        },
       }),
       this.prisma.word.count({ where: this.alive_word_filter }),
       this.prisma.wordPronunciationAudio.count(),
     ]);
+    const words = await this.findWordsBySortedIds(ids);
 
     return { words, totalCount, audioCount };
   }
