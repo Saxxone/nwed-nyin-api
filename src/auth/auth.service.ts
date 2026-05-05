@@ -14,7 +14,11 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateFedUserDto } from 'src/user/dto/create-user.dto';
 import { UserService } from '../user/user.service';
 import { JwtPayload } from './auth.guard';
-import { jwtConstants } from './constants';
+import {
+  ACCESS_TOKEN_TTL_DAYS,
+  jwtConstants,
+  REFRESH_TOKEN_TTL_DAYS,
+} from './constants';
 import { AuthUser } from './dto/sign-in.dto';
 import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 
@@ -284,7 +288,7 @@ export class AuthService {
           } as User);
 
           const access_token_expires_at = new Date(
-            Date.now() + 30 * MILLISECONDS_PER_DAY,
+            Date.now() + ACCESS_TOKEN_TTL_DAYS * MILLISECONDS_PER_DAY,
           );
           const new_access_hash = await this.hashToken(new_access_token);
 
@@ -343,7 +347,7 @@ export class AuthService {
     };
     return this.jwtService.signAsync(payload, {
       secret: jwtConstants.secret,
-      expiresIn: '7d',
+      expiresIn: `${ACCESS_TOKEN_TTL_DAYS}d`,
     });
   }
 
@@ -354,7 +358,7 @@ export class AuthService {
     };
     return this.jwtService.signAsync(payload, {
       secret: jwtConstants.refreshSecret,
-      expiresIn: '7d',
+      expiresIn: `${REFRESH_TOKEN_TTL_DAYS}d`,
     });
   }
 
@@ -363,7 +367,10 @@ export class AuthService {
     token: string,
     is_refresh_token: boolean,
   ): Promise<void> {
-    const expires_at = new Date(Date.now() + 30 * MILLISECONDS_PER_DAY);
+    const ttl_days = is_refresh_token
+      ? REFRESH_TOKEN_TTL_DAYS
+      : ACCESS_TOKEN_TTL_DAYS;
+    const expires_at = new Date(Date.now() + ttl_days * MILLISECONDS_PER_DAY);
     const token_hash = await this.hashToken(token);
 
     await this.prisma.authToken.upsert({
