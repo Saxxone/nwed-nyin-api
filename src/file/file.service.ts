@@ -40,21 +40,25 @@ export class FileService {
 
   @Cron(CronExpression.EVERY_DAY_AT_11PM)
   async handleCron() {
-    this.logger.log('remove orphaned files every day at 11pm');
+    this.logger.log(
+      'remove orphaned article image uploads every day at 11pm',
+    );
 
     const twentyFourHoursAgo = new Date();
     twentyFourHoursAgo.setDate(twentyFourHoursAgo.getDate() - 1);
 
-    const pendingFiles = await this.prisma.file.findMany({
+    /** Only stale PENDING images never attached to an article (e.g. abandoned editor uploads). */
+    const orphanedPendingImages = await this.prisma.file.findMany({
       where: {
         status: Status.PENDING,
+        type: FileType.IMAGE,
         article_id: null,
         created_at: {
           lt: twentyFourHoursAgo,
         },
       },
     });
-    await this.deleteFilesAndRecords(pendingFiles);
+    await this.deleteFilesAndRecords(orphanedPendingImages);
   }
 
   private async deleteFilesAndRecords(files: Array<FileModel>) {
