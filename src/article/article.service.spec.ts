@@ -59,6 +59,7 @@ describe('ArticleService', () => {
         img: '/avatar.png',
       },
     ],
+    sections: [],
     ...overrides,
   });
 
@@ -198,20 +199,62 @@ describe('ArticleService', () => {
       service.search({ term: ' title ', skip: 0, take: 10 }),
     ).resolves.toEqual([]);
 
-    expect(prisma.article.findMany).toHaveBeenCalledWith(
+    const find_many_mock = prisma.article.findMany as jest.Mock;
+    const search_call = find_many_mock.mock.calls[0];
+    expect(search_call).toBeDefined();
+
+    const find_many_args = search_call[0] as Record<string, unknown>;
+
+    expect(find_many_args.where).toEqual(
       expect.objectContaining({
-        where: expect.objectContaining({
-          status: 'PUBLISHED',
-          OR: expect.arrayContaining([
-            { title: { contains: 'title' } },
-            { summary: { contains: 'title' } },
-            { slug: { contains: 'title' } },
-          ]),
-        }),
-        skip: 0,
-        take: 10,
+        status: 'PUBLISHED',
+        AND: [
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              { title: { contains: 'title' } },
+              { summary: { contains: 'title' } },
+              { slug: { contains: 'title' } },
+            ]),
+          }),
+        ],
       }),
     );
+
+    expect(find_many_args.take).toBeGreaterThanOrEqual(480);
+    expect(find_many_args.take).toBeLessThanOrEqual(900);
+    expect(find_many_args.skip).toBeUndefined();
+    expect(find_many_args.orderBy).toEqual({ updated_at: 'desc' });
+  });
+
+  it('orders search hits by relevance, not insertion order', async () => {
+    const weak_hit = makeArticle({
+      id: 'weak-hit',
+      title: 'Weekly notes',
+      slug: 'weekly-notes',
+      summary: 'A casual mention of typography in passing.',
+      sections: [{ title: 'Appendix', content: 'Typography as art.' }],
+      updated_at: new Date('2026-03-01T00:00:00.000Z'),
+    });
+    const strong_hit = makeArticle({
+      id: 'strong-hit',
+      title: 'Typography in community publishing',
+      slug: 'typography-publishing',
+      summary: 'How type choices affect legibility.',
+      sections: [],
+      updated_at: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    prisma.article.findMany.mockResolvedValue([weak_hit, strong_hit]);
+
+    const ranked = await service.search({
+      term: 'typography',
+      skip: 0,
+      take: 5,
+    });
+
+    expect(ranked.map((article) => article.slug)).toEqual([
+      'typography-publishing',
+      'weekly-notes',
+    ]);
   });
 
   it('suggests related articles from the current article title and summary only', async () => {

@@ -95,6 +95,21 @@ type PublicArticlePayload = Prisma.ArticleGetPayload<{
   select: typeof public_article_select;
 }>;
 
+/** Used only to rank `/article/search`; `sections` is stripped before returning. */
+const article_search_ranking_select = {
+  ...public_article_select,
+  sections: {
+    select: {
+      title: true,
+      content: true,
+    },
+  },
+} satisfies Prisma.ArticleSelect;
+
+type ArticleSearchRankingPayload = Prisma.ArticleGetPayload<{
+  select: typeof article_search_ranking_select;
+}>;
+
 type PublicArticleMedia = Pick<
   File,
   | 'id'
@@ -147,6 +162,10 @@ export type PublicArticle = {
 };
 
 type RelatedArticleSource = 'article' | 'word';
+
+const ARTICLE_SEARCH_MAX_CANDIDATES = 480;
+const ARTICLE_SEARCH_HARD_CAP = 900;
+const ARTICLE_SEARCH_MAX_QUERY_TOKENS = 14;
 
 export type ArticleRevisionEntry = {
   id: string;
@@ -411,6 +430,204 @@ export class ArticleService {
       .split(/[^\p{L}\p{N}]+/u)
       .map((token) => token.trim().toLowerCase())
       .filter((token) => token.length >= 2);
+  }
+
+  private normalizeArticleSearchPhrase(trimmed_term: string): string {
+    return trimmed_term.toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  /**
+   * Significant query tokens. Multi-token queries use AND semantics — each token must match at least one field.
+   */
+  private extractArticleSearchTokens(trimmed_term: string): string[] {
+    const pieces = trimmed_term
+      .split(/[^\p{L}\p{N}]+/u)
+      .map((token) => token.trim().toLowerCase())
+      .filter((token) => token.length >= 2);
+
+    const unique = Array.from(new Set(pieces)).slice(
+      0,
+      ARTICLE_SEARCH_MAX_QUERY_TOKENS,
+    );
+
+    if (unique.length) return unique;
+
+    const fallback = this.normalizeArticleSearchPhrase(trimmed_term);
+    return fallback.length >= 2 ? [fallback] : [];
+  }
+
+  private buildPublishedSearchWhereForTokens(
+    tokens: string[],
+  ): Prisma.ArticleWhereInput {
+    const token_clause = (token: string): Prisma.ArticleWhereInput => ({
+      OR: [
+        { title: { contains: token } },
+        { summary: { contains: token } },
+        { slug: { contains: token } },
+        {
+          tags: {
+            some: {
+              name: { contains: token },
+            },
+          },
+        },
+        {
+          categories: {
+            some: {
+              name: { contains: token },
+            },
+          },
+        },
+        {
+          sections: {
+            some: {
+              OR: [
+                { title: { contains: token } },
+                { content: { contains: token } },
+              ],
+            },
+          },
+        },
+      ],
+    });
+
+    return {
+      status: Status.PUBLISHED,
+      AND: tokens.map((token) => token_clause(token)),
+    };
+  }
+
+  private looseComparableSlugFromPhrase(phrase: string): string {
+    return phrase
+      .normalize('NFD')
+      .replace(/\p{M}/gu, '')
+      .replace(/[^\p{L}\p{N}]+/gu, '-')
+      .replace(/^-+|-+$/g, '')
+      .toLowerCase();
+  }
+
+  private isUnicodeAlphanumeric(character: string): boolean {
+    return /\p{L}|\p{N}/u.test(character);
+  }
+
+  /** True when `token` occurs in `text` bounded by non-letters/non-digits or string edges (Unicode-aware). */
+  private tokenAppearsDelimited(text: string, token: string): boolean {
+    const haystack = text.toLowerCase();
+    const needle = token.toLowerCase();
+    let start = haystack.indexOf(needle);
+    while (start !== -1) {
+      const end = start + needle.length;
+      const boundary_before =
+        start === 0 || !this.isUnicodeAlphanumeric(haystack[start - 1]!);
+      const boundary_after =
+        end >= haystack.length || !this.isUnicodeAlphanumeric(haystack[end]!);
+      if (boundary_before && boundary_after) return true;
+      start = haystack.indexOf(needle, start + 1);
+    }
+    return false;
+  }
+
+  private scoreArticleSearch(
+    article: ArticleSearchRankingPayload,
+    tokens: string[],
+    phrase_norm: string,
+  ): number {
+    const title_lower = article.title.toLowerCase();
+    const summary_lower = article.summary.toLowerCase();
+    const slug_lower = article.slug.toLowerCase();
+
+    const section_blob = article.sections
+      .map((section) =>
+        `${section.title}\n${section.content}`.toLowerCase(),
+      )
+      .join('\n');
+
+    let score = 0;
+
+    if (phrase_norm.length >= 2) {
+      const phrase_slugish = phrase_norm.includes(' ')
+        ? this.looseComparableSlugFromPhrase(phrase_norm)
+        : phrase_norm.replace(/\s+/g, '');
+
+      if (title_lower === phrase_norm) score += 220;
+      else if (this.tokenAppearsDelimited(article.title, phrase_norm)) {
+        score += 150;
+      } else if (title_lower.includes(phrase_norm)) {
+        score += 110;
+      }
+
+      if (phrase_slugish.length >= 2) {
+        if (slug_lower === phrase_slugish) score += 80;
+        else if (
+          slug_lower.startsWith(`${phrase_slugish}-`) ||
+          slug_lower.endsWith(`-${phrase_slugish}`) ||
+          slug_lower.includes(`-${phrase_slugish}-`)
+        ) {
+          score += 62;
+        } else if (slug_lower.includes(phrase_slugish)) {
+          score += 48;
+        }
+      }
+
+      if (summary_lower.includes(phrase_norm)) {
+        score += 38;
+        if (
+          phrase_norm.includes(' ') &&
+          this.tokenAppearsDelimited(article.summary, phrase_norm)
+        ) {
+          score += 14;
+        }
+      }
+
+      if (section_blob.includes(phrase_norm)) score += 18;
+    }
+
+    const keyword_terms = this.readKeywordTerms(
+      article.metadata?.keywords,
+    ).map((keyword) => keyword.toLowerCase());
+
+    for (const token of tokens) {
+      const tag_lc = article.tags.map((tg) => tg.name.toLowerCase());
+      const cat_lc = article.categories.map((c) => c.name.toLowerCase());
+
+      if (title_lower === token) score += 72;
+      else if (title_lower.startsWith(`${token} `))
+        score += 48;
+      else if (this.tokenAppearsDelimited(article.title, token))
+        score += 34;
+      else if (title_lower.includes(token)) score += 20;
+
+      if (slug_lower === token) score += 44;
+      else if (
+        slug_lower.startsWith(`${token}-`) ||
+        slug_lower.endsWith(`-${token}`)
+      )
+        score += 30;
+      else if (slug_lower.includes(token)) score += 16;
+
+      if (this.tokenAppearsDelimited(article.summary, token)) score += 16;
+      else if (summary_lower.includes(token)) score += 11;
+
+      if (tag_lc.some((tg) => tg === token)) score += 28;
+      else if (tag_lc.some((tg) => tg.includes(token))) score += 14;
+
+      if (cat_lc.some((c) => c.includes(token))) score += 10;
+
+      if (keyword_terms.some((k) => k === token || k.includes(token))) {
+        score += 9;
+      }
+
+      if (section_blob.includes(token)) score += 5;
+    }
+
+    return score;
+  }
+
+  private rankingPayloadToPublicShape(
+    row: ArticleSearchRankingPayload,
+  ): PublicArticlePayload {
+    const { sections: _sections, ...rest } = row;
+    return rest;
   }
 
   private buildRelatedArticleWhere({
@@ -947,48 +1164,51 @@ export class ArticleService {
 
     if (!search_term) return this.findAll({ skip, take });
 
-    const articles = await this.prisma.article.findMany({
-      where: {
-        status: Status.PUBLISHED,
-        OR: [
-          { title: { contains: search_term } },
-          { summary: { contains: search_term } },
-          { slug: { contains: search_term } },
-          {
-            tags: {
-              some: {
-                name: { contains: search_term },
-              },
-            },
-          },
-          {
-            categories: {
-              some: {
-                name: { contains: search_term },
-              },
-            },
-          },
-          {
-            sections: {
-              some: {
-                OR: [
-                  { title: { contains: search_term } },
-                  { content: { contains: search_term } },
-                ],
-              },
-            },
-          },
-        ],
-      },
-      skip,
-      take,
+    const phrase_norm = this.normalizeArticleSearchPhrase(search_term);
+    const tokens = this.extractArticleSearchTokens(search_term);
+
+    if (!tokens.length) return this.findAll({ skip, take });
+
+    const where = this.buildPublishedSearchWhereForTokens(tokens);
+
+    const candidate_cap = Math.min(
+      Math.max(ARTICLE_SEARCH_MAX_CANDIDATES, skip + take + 200),
+      ARTICLE_SEARCH_HARD_CAP,
+    );
+
+    const rows = await this.prisma.article.findMany({
+      where,
+      take: candidate_cap,
       orderBy: {
-        created_at: 'desc',
+        updated_at: 'desc',
       },
-      select: public_article_select,
+      select: article_search_ranking_select,
     });
 
-    return this.toPublicArticlesWithFallbacks(articles);
+    const ranked_rows = rows
+      .map((row) => ({
+        row,
+        score: this.scoreArticleSearch(row, tokens, phrase_norm),
+      }))
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+
+        const left_time = Math.max(
+          left.row.updated_at.getTime(),
+          left.row.created_at.getTime(),
+        );
+        const right_time = Math.max(
+          right.row.updated_at.getTime(),
+          right.row.created_at.getTime(),
+        );
+        return right_time - left_time;
+      });
+
+    const page_rows = ranked_rows
+      .slice(skip, skip + take)
+      .map(({ row }) => this.rankingPayloadToPublicShape(row));
+
+    return this.toPublicArticlesWithFallbacks(page_rows);
   }
 
   async findRelated({
