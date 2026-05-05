@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -154,6 +155,8 @@ export type ArticleRevisionEntry = {
   created_at: Date;
   created_by: string;
   content: Prisma.JsonValue;
+  /** When set, the client asked for this revision number but no row existed; `version` is the resolved snapshot. */
+  requested_version?: number;
 };
 
 function revisionPayload(input: {
@@ -1160,6 +1163,68 @@ export class ArticleService {
     });
   }
 
+  /**
+   * Returns the newest stored revision whose version is <= `requestedVersion`.
+   * Use this when `Article.version` may be ahead of existing `ArticleVersion` rows.
+   */
+  async findRevisionAtVersion(
+    id: string,
+    requestedVersion: number,
+    email: string,
+  ): Promise<ArticleRevisionEntry> {
+    if (
+      !Number.isFinite(requestedVersion) ||
+      !Number.isInteger(requestedVersion) ||
+      requestedVersion < 1
+    ) {
+      throw new BadRequestException('Invalid article revision version');
+    }
+
+    const existing_article = await this.prisma.article.findUnique({
+      where: { id },
+      include: {
+        contributors: {
+          select: { id: true },
+        },
+      },
+    });
+
+    const user = await this.userService.findUser(email);
+    if (!user) throw new UnauthorizedException('Login or create account');
+    if (!existing_article) {
+      throw new NotFoundException(`Article with id ${id} not found`);
+    }
+
+    this.denyArticleViewer(user.role);
+    this.assertArticleEditRights(user, existing_article);
+
+    const row = await this.prisma.articleVersion.findFirst({
+      where: {
+        article_id: id,
+        version: { lte: requestedVersion },
+      },
+      orderBy: { version: 'desc' },
+    });
+
+    if (!row) {
+      throw new NotFoundException(
+        `No article revision at or before version ${requestedVersion}`,
+      );
+    }
+
+    return {
+      id: row.id,
+      article_id: row.article_id,
+      version: row.version,
+      created_at: row.created_at,
+      created_by: row.created_by,
+      content: row.content,
+      ...(row.version !== requestedVersion
+        ? { requested_version: requestedVersion }
+        : {}),
+    };
+  }
+
   async update(
     id: string,
     update_article_dto: UpdateArticleDto,
@@ -1231,13 +1296,6 @@ export class ArticleService {
     const next_title = title ?? existing_article.title;
     const new_slug = await this.slugify(next_title, id);
     const should_update_markdown = typeof markdown === 'string';
-    const markdown_path = should_update_markdown
-      ? await this.writeMarkdownFile(new_slug, markdown)
-      : null;
-
-    if (should_update_markdown && !markdown_path) {
-      throw new NotImplementedException('Error updating markdown file');
-    }
 
     const generated_metadata = should_update_markdown
       ? this.inferArticleWriteMetadata({
@@ -1249,6 +1307,14 @@ export class ArticleService {
           metadata,
         })
       : null;
+
+    const markdown_path = should_update_markdown
+      ? await this.writeMarkdownFile(new_slug, markdown)
+      : null;
+
+    if (should_update_markdown && !markdown_path) {
+      throw new NotImplementedException('Error updating markdown file');
+    }
 
     const update_data: Prisma.ArticleUpdateInput = {
       title: next_title,
@@ -1398,23 +1464,27 @@ export class ArticleService {
       };
     }
 
-    const article = await this.prisma.article.update({
-      where: { id },
-      data: update_data,
-      select: {
-        slug: true,
-      },
-    });
-
-    if (owned_media_file_ids.length) {
-      await this.prisma.file.updateMany({
-        where: {
-          id: { in: owned_media_file_ids },
-          owner_id: user.id,
+    const article = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.article.update({
+        where: { id },
+        data: update_data,
+        select: {
+          slug: true,
         },
-        data: { status: Status.UPLOADED },
       });
-    }
+
+      if (owned_media_file_ids.length) {
+        await tx.file.updateMany({
+          where: {
+            id: { in: owned_media_file_ids },
+            owner_id: user.id,
+          },
+          data: { status: Status.UPLOADED },
+        });
+      }
+
+      return updated;
+    });
 
     return this.findOne(article.slug);
   }

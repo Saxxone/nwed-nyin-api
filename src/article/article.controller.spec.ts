@@ -16,6 +16,7 @@ describe('ArticleController', () => {
     findRelated: AnyMock;
     findOne: AnyMock;
     findRevisions: AnyMock;
+    findRevisionAtVersion: AnyMock;
     update: AnyMock;
     remove: AnyMock;
   };
@@ -31,6 +32,7 @@ describe('ArticleController', () => {
       findRelated: jest.fn<(...args: any[]) => any>(),
       findOne: jest.fn<(...args: any[]) => any>(),
       findRevisions: jest.fn<(...args: any[]) => any>(),
+      findRevisionAtVersion: jest.fn<(...args: any[]) => any>(),
       update: jest.fn<(...args: any[]) => any>(),
       remove: jest.fn<(...args: any[]) => any>(),
     };
@@ -107,6 +109,27 @@ describe('ArticleController', () => {
     await expect(controller.findOne('first-post')).resolves.toBe(article);
 
     expect(articleService.findOne).toHaveBeenCalledWith('first-post');
+  });
+
+  it('fetches a single revision by version for editors with access', async () => {
+    const revision = { version: 2, id: 'v2', requested_version: 5 };
+    articleService.findRevisionAtVersion.mockResolvedValue(revision);
+
+    await expect(
+      controller.revisionAtVersion(
+        'article-1',
+        5,
+        {
+          user: { sub: 'editor@example.com' },
+        },
+      ),
+    ).resolves.toBe(revision);
+
+    expect(articleService.findRevisionAtVersion).toHaveBeenCalledWith(
+      'article-1',
+      5,
+      'editor@example.com',
+    );
   });
 
   it('returns ordered revision history for editors with access', async () => {

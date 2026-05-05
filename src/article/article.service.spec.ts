@@ -13,6 +13,7 @@ type AnyMock = Mock<(...args: any[]) => any>;
 describe('ArticleService', () => {
   let service: ArticleService;
   let prisma: {
+    $transaction: AnyMock;
     article: {
       findMany: AsyncPrismaMock;
       findFirst: AsyncPrismaMock;
@@ -22,6 +23,7 @@ describe('ArticleService', () => {
     };
     articleVersion: {
       aggregate: AsyncPrismaMock;
+      findFirst: AsyncPrismaMock;
     };
     file: {
       findMany: AsyncPrismaMock;
@@ -72,12 +74,19 @@ describe('ArticleService', () => {
       articleVersion: {
         aggregate:
           jest.fn<() => Promise<{ _max: { version: number | null } }>>(),
+        findFirst: jest.fn<() => Promise<unknown>>(),
       },
       file: {
         findMany: jest.fn<() => Promise<unknown>>(),
         updateMany: jest.fn<() => Promise<unknown>>(),
       },
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation(
+      async (fn: (tx: { article: typeof prisma.article; file: typeof prisma.file }) => Promise<unknown>) =>
+        fn({ article: prisma.article, file: prisma.file }),
+    );
+    prisma.articleVersion.findFirst.mockResolvedValue(null);
     userService = {
       findUser: jest.fn<(...args: any[]) => any>(),
     };
@@ -579,5 +588,70 @@ describe('ArticleService', () => {
     const updateCall = (prisma.article.update as AnyMock).mock.calls[0][0];
     expect(updateCall.data.version).toBe(2);
     expect(updateCall.data.versions?.create.version).toBe(2);
+  });
+
+  it('findRevisionAtVersion returns exact row when present', async () => {
+    prisma.article.findUnique.mockResolvedValue({
+      id: 'article-1',
+      created_by: 'editor@example.com',
+      contributors: [{ id: 'user-1' }],
+    });
+    userService.findUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'editor@example.com',
+      role: 'EDITOR',
+    });
+    prisma.articleVersion.findFirst.mockResolvedValue({
+      id: 'ver-3',
+      article_id: 'article-1',
+      version: 3,
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      created_by: 'editor@example.com',
+      content: { marathon: 'snap' },
+    });
+
+    await expect(
+      service.findRevisionAtVersion('article-1', 3, 'editor@example.com'),
+    ).resolves.toEqual({
+      id: 'ver-3',
+      article_id: 'article-1',
+      version: 3,
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      created_by: 'editor@example.com',
+      content: { marathon: 'snap' },
+    });
+  });
+
+  it('findRevisionAtVersion falls back to latest stored revision <= requested', async () => {
+    prisma.article.findUnique.mockResolvedValue({
+      id: 'article-1',
+      created_by: 'editor@example.com',
+      contributors: [{ id: 'user-1' }],
+    });
+    userService.findUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'editor@example.com',
+      role: 'EDITOR',
+    });
+    prisma.articleVersion.findFirst.mockResolvedValue({
+      id: 'ver-2',
+      article_id: 'article-1',
+      version: 2,
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      created_by: 'editor@example.com',
+      content: { markdown: 'older' },
+    });
+
+    await expect(
+      service.findRevisionAtVersion('article-1', 5, 'editor@example.com'),
+    ).resolves.toEqual({
+      id: 'ver-2',
+      article_id: 'article-1',
+      version: 2,
+      created_at: new Date('2026-01-01T00:00:00.000Z'),
+      created_by: 'editor@example.com',
+      content: { markdown: 'older' },
+      requested_version: 5,
+    });
   });
 });

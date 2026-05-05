@@ -5,6 +5,7 @@ import {
   Get,
   NotFoundException,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
   Query,
@@ -110,6 +111,15 @@ export class ArticleController {
       'Content-Disposition': `inline; filename="${filename}"`,
     });
     return this.fileService.streamStaticFile(path, 'articles');
+  }
+
+  @Get('revisions/:id/v/:version')
+  revisionAtVersion(
+    @Param('id') id: string,
+    @Param('version', ParseIntPipe) version: number,
+    @Request() req: any,
+  ): Promise<ArticleRevisionEntry> {
+    return this.articleService.findRevisionAtVersion(id, version, req.user.sub);
   }
 
   @Get('revisions/:id')

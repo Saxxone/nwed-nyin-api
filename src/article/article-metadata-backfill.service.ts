@@ -25,6 +25,7 @@ type InferredArticleMetadata = {
 type ArticleForBackfill = Prisma.ArticleGetPayload<{
   select: {
     id: true;
+    version: true;
     title: true;
     slug: true;
     body: true;
@@ -253,6 +254,7 @@ export class ArticleMetadataBackfillService {
       take: batch_size,
       select: {
         id: true,
+        version: true,
         title: true,
         slug: true,
         body: true,
@@ -348,6 +350,18 @@ export class ArticleMetadataBackfillService {
   private async readArticleContent(
     article: ArticleForBackfill,
   ): Promise<Prisma.JsonValue | string | null> {
+    if (article.version >= 1) {
+      const aligned = await this.prisma.articleVersion.findFirst({
+        where: {
+          article_id: article.id,
+          version: { lte: article.version },
+        },
+        orderBy: { version: 'desc' },
+        select: { content: true },
+      });
+      if (aligned?.content) return aligned.content;
+    }
+
     const latest_version_content = article.versions[0]?.content;
     if (latest_version_content) return latest_version_content;
     if (!article.body) return null;

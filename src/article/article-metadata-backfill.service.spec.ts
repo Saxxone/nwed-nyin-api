@@ -24,6 +24,9 @@ describe('ArticleMetadataBackfillService', () => {
       findMany: AsyncPrismaMock;
       update: AsyncPrismaMock;
     };
+    articleVersion: {
+      findFirst: AsyncPrismaMock;
+    };
   };
 
   beforeEach(async () => {
@@ -32,9 +35,13 @@ describe('ArticleMetadataBackfillService', () => {
         findMany: jest.fn<() => Promise<unknown>>(),
         update: jest.fn<() => Promise<unknown>>(),
       },
+      articleVersion: {
+        findFirst: jest.fn<() => Promise<unknown>>(),
+      },
     };
     readFileMock = fs.readFile as unknown as Mock<() => Promise<string>>;
     readFileMock.mockReset();
+    prisma.articleVersion.findFirst.mockResolvedValue(null);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -137,6 +144,7 @@ describe('ArticleMetadataBackfillService', () => {
       .mockResolvedValueOnce([
         {
           id: 'article-1',
+          version: 2,
           title: 'Ibibio Learning',
           slug: 'ibibio-learning',
           categories: [{ name: 'Language' }],
@@ -183,6 +191,7 @@ describe('ArticleMetadataBackfillService', () => {
         }),
         select: expect.objectContaining({
           body: true,
+          version: true,
           versions: expect.objectContaining({
             orderBy: { version: 'desc' },
             take: 1,
@@ -234,6 +243,7 @@ describe('ArticleMetadataBackfillService', () => {
       .mockResolvedValueOnce([
         {
           id: 'article-1',
+          version: 1,
           title: 'Why Oral History Matters',
           slug: 'why-oral-history-matters',
           body: 'articles/why-oral-history-matters.md',
@@ -289,6 +299,7 @@ describe('ArticleMetadataBackfillService', () => {
       .mockResolvedValueOnce([
         {
           id: 'article-1',
+          version: 1,
           title: 'Ibibio Learning',
           slug: 'ibibio-learning',
           categories: [{ name: 'Language' }, { name: 'Learning' }],
