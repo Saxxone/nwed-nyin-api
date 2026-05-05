@@ -13,11 +13,13 @@ import {
 } from '../generated/prisma/client';
 import { constants, createReadStream } from 'fs';
 import * as fs from 'fs/promises';
-import { join, resolve } from 'path';
+import { basename, join, normalize, resolve } from 'path';
 import {
   resolveLegacyPublicNestedPath,
   resolvePublicFileUnderFolder,
 } from '../security/safe-static-path';
+import { persistArticleMarkdownSuffixFallbackForFilename } from '../article/article-markdown-path-repair';
+import { markdownBasenameStripNumericSuffix } from '../article/helpers/markdown-numeric-suffix-fallback';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 import { UpdateFileDto } from './dto/update-file.dto';
@@ -229,7 +231,39 @@ export class FileService {
       const stream = createReadStream(public_path);
       return new StreamableFile(stream);
     } catch {
-      throw new NotFoundException('file not found ');
+      if (folder !== 'articles') {
+        throw new NotFoundException('file not found ');
+      }
+      let decoded = path.trim().replace(/\\/g, '/');
+      try {
+        decoded = decodeURIComponent(decoded);
+      } catch {
+        throw new NotFoundException('file not found ');
+      }
+      const fileName = basename(normalize(decoded));
+      const fallbackName = markdownBasenameStripNumericSuffix(fileName);
+      if (!fallbackName || fallbackName === fileName) {
+        throw new NotFoundException('file not found ');
+      }
+      try {
+        public_path = resolvePublicFileUnderFolder(
+          this.public_root,
+          folder,
+          fallbackName,
+        );
+        await fs.access(public_path, constants.F_OK);
+        try {
+          await persistArticleMarkdownSuffixFallbackForFilename(this.prisma, {
+            requestedBasename: fileName,
+            resolvedRelativePosix: fallbackName,
+          });
+        } catch {
+          /* best-effort DB repair */
+        }
+        return new StreamableFile(createReadStream(public_path));
+      } catch {
+        throw new NotFoundException('file not found ');
+      }
     }
   }
 

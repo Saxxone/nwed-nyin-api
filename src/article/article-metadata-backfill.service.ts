@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma, ReferenceType, Status } from 'src/generated/prisma/client';
 import { promises as fs } from 'fs';
-import { isAbsolute, join } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { PrismaService } from '../prisma/prisma.service';
+import { persistArticleMarkdownSuffixFallbackFromRelative } from './article-markdown-path-repair';
+import { markdownRelativePathsWithNumericSuffixFallback } from './helpers/markdown-numeric-suffix-fallback';
 
 type InferredReference = {
   type: ReferenceType;
@@ -366,8 +368,25 @@ export class ArticleMetadataBackfillService {
     if (latest_version_content) return latest_version_content;
     if (!article.body) return null;
 
-    const markdown = await this.readFirstExistingMarkdown(article.body);
-    if (markdown) return markdown;
+    const markdown_read = await this.readFirstExistingMarkdown(article.body);
+    if (markdown_read) {
+      const rel = this.relativePosixUnderArticleBases(
+        markdown_read.absolutePath,
+      );
+      if (rel) {
+        try {
+          await persistArticleMarkdownSuffixFallbackFromRelative(this.prisma, {
+            articleId: article.id,
+            slug: article.slug,
+            body: article.body,
+            resolvedRelativePosix: rel,
+          });
+        } catch {
+          /* best-effort */
+        }
+      }
+      return markdown_read.content;
+    }
 
     const inline_body = this.readArticleBody(article.body);
     if (inline_body) return inline_body;
@@ -436,49 +455,63 @@ export class ArticleMetadataBackfillService {
     return body;
   }
 
+  private markdownArticleBaseDirs(): string[] {
+    return [
+      join(__dirname, '..', '..', 'public', 'articles'),
+      join(__dirname, '..', '..', '..', 'public', 'articles'),
+      join(process.cwd(), 'public', 'articles'),
+      join(process.cwd(), 'nwed-nyin-api', 'public', 'articles'),
+    ];
+  }
+
+  private relativePosixUnderArticleBases(absolutePath: string): string | null {
+    const resolvedFile = resolve(absolutePath);
+    for (const base of this.markdownArticleBaseDirs()) {
+      const r = relative(resolve(base), resolvedFile);
+      if (!r.startsWith('..') && !isAbsolute(r)) {
+        return r.split(sep).join('/');
+      }
+    }
+    return null;
+  }
+
   private async readFirstExistingMarkdown(
     body: string,
-  ): Promise<string | null> {
+  ): Promise<{ content: string; absolutePath: string } | null> {
     for (const path of this.resolveMarkdownPaths(body)) {
       try {
-        return await fs.readFile(path, 'utf8');
+        const content = await fs.readFile(path, 'utf8');
+        return { content, absolutePath: path };
       } catch {
         continue;
       }
     }
-
     return null;
   }
 
   private resolveMarkdownPaths(body: string): string[] {
-    if (isAbsolute(body)) return [body];
+    if (isAbsolute(body)) {
+      const dir = dirname(body);
+      const variants = markdownRelativePathsWithNumericSuffixFallback(
+        basename(body),
+      );
+      return Array.from(new Set(variants.map((v) => join(dir, v))));
+    }
 
     const normalized_body = body
       .replace(/^\/+/, '')
       .replace(/^public\/+/, '')
       .replace(/^articles\/+/, '');
 
+    const relative_candidates =
+      markdownRelativePathsWithNumericSuffixFallback(normalized_body);
+
+    const bases = this.markdownArticleBaseDirs();
+
     return Array.from(
-      new Set([
-        join(__dirname, '..', '..', 'public', 'articles', normalized_body),
-        join(
-          __dirname,
-          '..',
-          '..',
-          '..',
-          'public',
-          'articles',
-          normalized_body,
-        ),
-        join(process.cwd(), 'public', 'articles', normalized_body),
-        join(
-          process.cwd(),
-          'nwed-nyin-api',
-          'public',
-          'articles',
-          normalized_body,
-        ),
-      ]),
+      new Set(
+        relative_candidates.flatMap((rel) => bases.map((b) => join(b, rel))),
+      ),
     );
   }
 

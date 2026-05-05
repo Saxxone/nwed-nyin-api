@@ -16,15 +16,20 @@ import {
   User,
 } from 'src/generated/prisma/client';
 import { existsSync, promises as fs } from 'fs';
-import { dirname, isAbsolute, join } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { UserService } from '../user/user.service';
 
+import { persistArticleMarkdownSuffixFallbackFromRelative } from './article-markdown-path-repair';
 import { ArticleMetadataBackfillService } from './article-metadata-backfill.service';
 import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { generateArticleSummary } from './helpers/article-summary.helper';
+import {
+  markdownBasenameStripNumericSuffix,
+  markdownRelativePathsWithNumericSuffixFallback,
+} from './helpers/markdown-numeric-suffix-fallback';
 
 const public_article_select = {
   id: true,
@@ -167,6 +172,10 @@ const ARTICLE_SEARCH_MAX_CANDIDATES = 480;
 const ARTICLE_SEARCH_HARD_CAP = 900;
 const ARTICLE_SEARCH_MAX_QUERY_TOKENS = 14;
 
+function getArticlesPublicRootResolved(): string {
+  return resolve(join(__dirname, '..', '..', '..', 'public', 'articles'));
+}
+
 export type ArticleRevisionEntry = {
   id: string;
   article_id: string;
@@ -295,11 +304,16 @@ export class ArticleService {
     return Array.from(image_urls);
   }
 
-  private resolveMarkdownPath(body?: string | null): string | null {
-    if (!body) return null;
+  private resolveMarkdownPathCandidates(body?: string | null): string[] {
+    if (!body) return [];
 
-    if (isAbsolute(body) && existsSync(body)) {
-      return body;
+    if (isAbsolute(body)) {
+      const base = basename(body);
+      const stripped = markdownBasenameStripNumericSuffix(base);
+      if (stripped && stripped.toLowerCase() !== base.toLowerCase()) {
+        return [body, join(dirname(body), stripped)];
+      }
+      return [body];
     }
 
     const normalized_body = body
@@ -307,14 +321,11 @@ export class ArticleService {
       .replace(/^public\/+/, '')
       .replace(/^articles\/+/, '');
 
-    return join(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      'public',
-      'articles',
-      normalized_body,
+    const relative_candidates =
+      markdownRelativePathsWithNumericSuffixFallback(normalized_body);
+
+    return relative_candidates.map((rel) =>
+      join(getArticlesPublicRootResolved(), rel),
     );
   }
 
@@ -349,25 +360,50 @@ export class ArticleService {
       articles.map(async (article) => {
         if (this.hasImageFile(article.file)) return article;
 
-        const markdown_path = this.resolveMarkdownPath(article.body);
-        if (!markdown_path) return article;
+        for (const markdown_path of this.resolveMarkdownPathCandidates(
+          article.body,
+        )) {
+          if (!markdown_path) continue;
+          if (!isAbsolute(markdown_path) && !existsSync(markdown_path)) {
+            continue;
+          }
+          try {
+            const markdown = await fs.readFile(markdown_path, 'utf8');
+            const root = getArticlesPublicRootResolved();
+            const rel = relative(resolve(root), resolve(markdown_path))
+              .split(sep)
+              .join('/');
+            if (!rel.startsWith('..')) {
+              try {
+                await persistArticleMarkdownSuffixFallbackFromRelative(
+                  this.prisma,
+                  {
+                    articleId: article.id,
+                    slug: article.slug,
+                    body: article.body,
+                    resolvedRelativePosix: rel,
+                  },
+                );
+              } catch {
+                /* best-effort DB repair */
+              }
+            }
+            const image_files = this.extractImageUrlsFromMarkdown(markdown).map(
+              (image_url, index) =>
+                this.createFallbackImageFile(article, image_url, index),
+            );
 
-        try {
-          const markdown = await fs.readFile(markdown_path, 'utf8');
-          const image_files = this.extractImageUrlsFromMarkdown(markdown).map(
-            (image_url, index) =>
-              this.createFallbackImageFile(article, image_url, index),
-          );
+            if (!image_files.length) return article;
 
-          if (!image_files.length) return article;
-
-          return {
-            ...article,
-            file: [...(article.file ?? []), ...image_files],
-          } as T;
-        } catch {
-          return article;
+            return {
+              ...article,
+              file: [...(article.file ?? []), ...image_files],
+            } as T;
+          } catch {
+            continue;
+          }
         }
+        return article;
       }),
     );
   }
