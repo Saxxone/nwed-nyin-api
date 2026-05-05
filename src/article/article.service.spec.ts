@@ -633,6 +633,75 @@ describe('ArticleService', () => {
     expect(updateCall.data.versions?.create.version).toBe(2);
   });
 
+  it('syncs markdown path on disk when title changes slug without content', async () => {
+    const publicArticle = makeArticle({
+      title: 'Renamed',
+      slug: 'renamed',
+      body: 'articles/renamed.md',
+    });
+
+    prisma.article.findUnique.mockResolvedValue({
+      id: 'article-1',
+      title: 'Original',
+      slug: 'original-slug',
+      body: 'articles/original-slug.md',
+      version: 1,
+      file: [],
+      categories: [],
+      tags: [],
+      references: [],
+      created_by: 'editor@example.com',
+      contributors: [{ id: 'user-1' }],
+    });
+    prisma.article.count.mockResolvedValue(0);
+    prisma.article.update.mockResolvedValue({ slug: 'renamed' });
+    prisma.file.updateMany.mockResolvedValue({ count: 1 });
+    prisma.article.findFirst.mockResolvedValue(publicArticle);
+    userService.findUser.mockResolvedValue({
+      id: 'user-1',
+      email: 'editor@example.com',
+      role: 'EDITOR',
+    });
+
+    const syncSpy = jest
+      .spyOn(service as any, 'syncMarkdownFilesystemForSlugChange')
+      .mockResolvedValue(null);
+
+    await service.update(
+      'article-1',
+      { title: 'Renamed' } as any,
+      'editor@example.com',
+    );
+
+    expect(syncSpy).toHaveBeenCalledWith({
+      articleId: 'article-1',
+      existingBody: 'articles/original-slug.md',
+      prevSlug: 'original-slug',
+      newSlug: 'renamed',
+    });
+
+    const updateCall = (prisma.article.update as AnyMock).mock.calls[0][0];
+    expect(updateCall.data.slug).toBe('renamed');
+    expect(updateCall.data.body).toBe('articles/renamed.md');
+
+    expect(prisma.file.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          article_id: 'article-1',
+          type: 'DOCUMENT',
+          mimetype: 'text/markdown',
+          path: 'articles/original-slug.md',
+        }),
+        data: expect.objectContaining({
+          path: 'articles/renamed.md',
+          filename: 'renamed',
+        }),
+      }),
+    );
+
+    syncSpy.mockRestore();
+  });
+
   it('findRevisionAtVersion returns exact row when present', async () => {
     prisma.article.findUnique.mockResolvedValue({
       id: 'article-1',

@@ -201,6 +201,11 @@ function revisionPayload(input: {
   };
 }
 
+/** Filesystem rollback when DB transaction fails after a slug-only rename or revision restore write. */
+type MarkdownSlugFsRollback =
+  | { kind: 'rename'; newPath: string; oldPath: string }
+  | { kind: 'unlink'; path: string };
+
 @Injectable()
 export class ArticleService {
   constructor(
@@ -988,18 +993,132 @@ export class ArticleService {
     };
   }
 
+  private markdownFilesystemAbsolutePath(slugStem: string): string {
+    const file_base =
+      process.env.FILE_BASE_URL?.trim() ||
+      /* dev/tests without .env */
+      'public';
+    return join(
+      __dirname,
+      '../../../',
+      file_base,
+      'articles',
+      `${slugStem}.md`,
+    );
+  }
+
+  private stemFromArticlesMdBody(
+    body: string | null | undefined,
+    slugFallback: string,
+  ): string {
+    if (body && typeof body === 'string') {
+      const m = body.trim().match(/^articles\/([^/]+)\.md$/i);
+      if (m) return m[1];
+    }
+    return slugFallback;
+  }
+
+  private async pathExistsFs(file_path: string): Promise<boolean> {
+    try {
+      await fs.access(file_path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private extractMarkdownFromRevisionContent(
+    content: Prisma.JsonValue | null | undefined,
+  ): string | null {
+    if (
+      !content ||
+      typeof content !== 'object' ||
+      Array.isArray(content) ||
+      content === null
+    ) {
+      return null;
+    }
+    const raw = (content as { markdown?: unknown }).markdown;
+    return typeof raw === 'string' && raw.length > 0 ? raw : null;
+  }
+
+  private async rollbackMarkdownSlugFilesystemChange(
+    rollback: MarkdownSlugFsRollback | null,
+  ): Promise<void> {
+    if (!rollback) return;
+    try {
+      if (rollback.kind === 'rename') {
+        await fs.rename(rollback.newPath, rollback.oldPath);
+      } else {
+        await fs.unlink(rollback.path);
+      }
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  /**
+   * When the title-derived slug changes but the client did not send `content`,
+   * keep DB `body`, on-disk markdown, and `File` rows in sync by renaming the `.md`
+   * file (or restoring from the latest revision snapshot).
+   */
+  private async syncMarkdownFilesystemForSlugChange(params: {
+    articleId: string;
+    existingBody: string | null;
+    prevSlug: string;
+    newSlug: string;
+  }): Promise<MarkdownSlugFsRollback | null> {
+    const { articleId, existingBody, prevSlug, newSlug } = params;
+    const oldStem = this.stemFromArticlesMdBody(existingBody, prevSlug);
+    const oldPath = this.markdownFilesystemAbsolutePath(oldStem);
+    const newPath = this.markdownFilesystemAbsolutePath(newSlug);
+
+    const oldExists = await this.pathExistsFs(oldPath);
+    const newExists = await this.pathExistsFs(newPath);
+
+    if (!oldExists && newExists) {
+      return null;
+    }
+
+    if (oldExists && newExists) {
+      throw new BadRequestException(
+        'Cannot rename article markdown: both the current and new filenames already exist in storage.',
+      );
+    }
+
+    if (oldExists && !newExists) {
+      await fs.mkdir(dirname(newPath), { recursive: true });
+      await fs.rename(oldPath, newPath);
+      return { kind: 'rename', newPath, oldPath };
+    }
+
+    const row = await this.prisma.articleVersion.findFirst({
+      where: { article_id: articleId },
+      orderBy: { version: 'desc' },
+      select: { content: true },
+    });
+    const markdown = this.extractMarkdownFromRevisionContent(row?.content);
+    if (markdown) {
+      const written = await this.writeMarkdownFile(newSlug, markdown);
+      if (!written) {
+        throw new NotImplementedException(
+          'Could not write markdown when syncing slug change',
+        );
+      }
+      return { kind: 'unlink', path: newPath };
+    }
+
+    throw new BadRequestException(
+      'The title change updates the article URL, but the markdown file is missing and no stored revision contains markdown to restore. Save the article again with the body included.',
+    );
+  }
+
   private async writeMarkdownFile(
     slug: string,
     content: string,
   ): Promise<string> {
     try {
-      const file_path = join(
-        __dirname,
-        '../../../',
-        process.env.FILE_BASE_URL,
-        'articles',
-        `${slug}.md`,
-      );
+      const file_path = this.markdownFilesystemAbsolutePath(slug);
 
       const dir = dirname(file_path);
 
@@ -1097,6 +1216,7 @@ export class ArticleService {
                 mimetype: 'text/markdown',
                 size: content.length,
                 type: FileType.DOCUMENT,
+                status: Status.UPLOADED,
                 url: 'articles/' + slug + '.md',
                 owner: {
                   connect: { id: user.id },
@@ -1622,6 +1742,7 @@ export class ArticleService {
           mimetype: 'text/markdown',
           size: markdown.length,
           type: FileType.DOCUMENT,
+          status: Status.UPLOADED,
           url: body_path_after,
           owner: {
             connect: { id: user.id },
@@ -1720,29 +1841,79 @@ export class ArticleService {
       };
     }
 
-    const article = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.article.update({
-        where: { id },
-        data: update_data,
-        select: {
-          slug: true,
-        },
+    let markdown_slug_rollback: MarkdownSlugFsRollback | null = null;
+
+    if (!should_update_markdown && new_slug !== existing_article.slug) {
+      markdown_slug_rollback = await this.syncMarkdownFilesystemForSlugChange({
+        articleId: id,
+        existingBody: existing_article.body,
+        prevSlug: existing_article.slug,
+        newSlug: new_slug,
+      });
+      update_data.body = `articles/${new_slug}.md`;
+    }
+
+    try {
+      const article = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.article.update({
+          where: { id },
+          data: update_data,
+          select: {
+            slug: true,
+          },
+        });
+
+        if (!should_update_markdown && new_slug !== existing_article.slug) {
+          const doc_file_where: Prisma.FileWhereInput = {
+            article_id: id,
+            type: FileType.DOCUMENT,
+            mimetype: 'text/markdown',
+          };
+          const trimmed_body = existing_article.body?.trim();
+          if (trimmed_body && /^articles\/[^/]+\.md$/i.test(trimmed_body)) {
+            doc_file_where.path = trimmed_body;
+          }
+          await tx.file.updateMany({
+            where: doc_file_where,
+            data: {
+              path: `articles/${new_slug}.md`,
+              url: `articles/${new_slug}.md`,
+              filename: new_slug,
+              originalname: `${new_slug}.md`,
+            },
+          });
+        }
+
+        if (owned_media_file_ids.length) {
+          await tx.file.updateMany({
+            where: {
+              id: { in: owned_media_file_ids },
+              owner_id: user.id,
+            },
+            data: { status: Status.UPLOADED },
+          });
+        }
+
+        return updated;
       });
 
-      if (owned_media_file_ids.length) {
-        await tx.file.updateMany({
-          where: {
-            id: { in: owned_media_file_ids },
-            owner_id: user.id,
-          },
-          data: { status: Status.UPLOADED },
-        });
+      if (should_update_markdown) {
+        const prev_stem = this.stemFromArticlesMdBody(
+          existing_article.body,
+          existing_article.slug,
+        );
+        if (prev_stem !== new_slug) {
+          await fs
+            .unlink(this.markdownFilesystemAbsolutePath(prev_stem))
+            .catch(() => {});
+        }
       }
 
-      return updated;
-    });
-
-    return this.findOne(article.slug);
+      return this.findOne(article.slug);
+    } catch (error) {
+      await this.rollbackMarkdownSlugFilesystemChange(markdown_slug_rollback);
+      throw error;
+    }
   }
 
   async remove(id: string, actorEmail: string): Promise<Article> {

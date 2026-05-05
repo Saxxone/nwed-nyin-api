@@ -48,6 +48,7 @@ export class FileService {
     const pendingFiles = await this.prisma.file.findMany({
       where: {
         status: Status.PENDING,
+        article_id: null,
         created_at: {
           lt: twentyFourHoursAgo,
         },
