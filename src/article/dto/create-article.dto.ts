@@ -1,5 +1,5 @@
 import { Article, FileType, ReferenceType } from 'src/generated/prisma/client';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsArray,
   IsDateString,
@@ -78,6 +78,52 @@ export class CreateArticleDto {
   versions?: ArticleVersion[];
 }
 
+/** Coerce common client/DB shapes into `string[]` before validation. */
+export function transformReferenceAuthors(value: unknown): string[] {
+  if (value == null) return [];
+  if (typeof value === 'string') {
+    const t = value.trim();
+    if (!t) return [];
+    return t.includes(',')
+      ? t.split(',').map((s) => s.trim()).filter(Boolean)
+      : [t];
+  }
+  if (Array.isArray(value)) {
+    const out: string[] = [];
+    for (const item of value) {
+      if (typeof item === 'string') {
+        const s = item.trim();
+        if (s) out.push(s);
+      } else if (
+        item != null &&
+        typeof item === 'object' &&
+        'name' in item &&
+        typeof (item as { name: unknown }).name === 'string'
+      ) {
+        const s = (item as { name: string }).name.trim();
+        if (s) out.push(s);
+      }
+    }
+    return out;
+  }
+  return [];
+}
+
+/** Normalize empty and date-only values for `@IsDateString()`. */
+export function transformReferenceAccessDate(
+  value: unknown,
+): string | undefined {
+  if (value == null || value === '') return undefined;
+  if (typeof value === 'string') {
+    const d = value.trim();
+    if (!d) return undefined;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return `${d}T00:00:00.000Z`;
+    return d;
+  }
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
+}
+
 export class ReferenceDto {
   @IsEnum(ReferenceType)
   type: ReferenceType;
@@ -98,8 +144,9 @@ export class ReferenceDto {
   @IsString()
   isbn: string | null;
 
+  @Transform(({ value }) => transformReferenceAuthors(value))
   @IsArray()
-  @IsString({ each: true }) // Each author should be a string
+  @IsString({ each: true })
   authors: string[];
 
   @IsOptional()
@@ -111,8 +158,9 @@ export class ReferenceDto {
   year: number | null;
 
   @IsOptional()
+  @Transform(({ value }) => transformReferenceAccessDate(value))
   @IsDateString()
-  access_date: Date | null;
+  access_date?: string | null;
 }
 
 export class MediaDto {
