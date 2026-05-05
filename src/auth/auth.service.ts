@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { User } from 'src/generated/prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -40,6 +40,8 @@ function isApprovedProfilePictureHost(hostname: string): boolean {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -202,6 +204,15 @@ export class AuthService {
         refresh_token: newRefreshToken,
       };
     } catch (error) {
+      const detail =
+        error instanceof UnauthorizedException
+          ? error.getResponse()
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      this.logger.warn(
+        `POST /auth/refresh denied (check Invalid refresh vs multi-tab race): ${typeof detail === 'string' ? detail : JSON.stringify(detail)}`,
+      );
       throw new UnauthorizedException(error);
     }
   }
