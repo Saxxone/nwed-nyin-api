@@ -18,7 +18,7 @@ import { basename } from 'path';
 import { Response } from 'express';
 import { Public } from 'src/auth/auth.guard';
 import { FileService } from 'src/file/file.service';
-import { DictionaryService } from './dictionary.service';
+import { DictionarySearchHit, DictionaryService } from './dictionary.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
 
@@ -118,7 +118,7 @@ export class DictionaryController {
 
   @Public()
   @Get('search')
-  async search(@Query('term') term: string): Promise<Word[]> {
+  async search(@Query('term') term: string): Promise<DictionarySearchHit[]> {
     if (!term) {
       return [];
     }

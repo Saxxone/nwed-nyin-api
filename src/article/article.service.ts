@@ -16,9 +16,25 @@ import {
   User,
 } from 'src/generated/prisma/client';
 import { existsSync, promises as fs } from 'fs';
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'path';
 import { FileService } from '../file/file.service';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  normalizeSearchText,
+  prepareSearchQuery,
+  searchTokenVariants,
+  scoreSearchText,
+  type PreparedSearchQuery,
+  type SearchTextWeights,
+} from '../search/search-relevance';
 import { UserService } from '../user/user.service';
 
 import { persistArticleMarkdownSuffixFallbackFromRelative } from './article-markdown-path-repair';
@@ -164,13 +180,72 @@ export type PublicArticle = {
   file: PublicArticlePayload['file'];
   metadata: PublicArticlePayload['metadata'];
   contributors: PublicArticlePayload['contributors'];
+  search_match?: ArticleSearchMatch;
+};
+
+export type ArticleSearchMatch = {
+  field: 'title' | 'summary' | 'slug' | 'tag' | 'category' | 'section';
+  text: string;
 };
 
 type RelatedArticleSource = 'article' | 'word';
 
 const ARTICLE_SEARCH_MAX_CANDIDATES = 480;
 const ARTICLE_SEARCH_HARD_CAP = 900;
-const ARTICLE_SEARCH_MAX_QUERY_TOKENS = 14;
+
+const ARTICLE_TITLE_SEARCH_WEIGHTS: SearchTextWeights = {
+  exact: 360,
+  phrase: 230,
+  prefix: 100,
+  token: 45,
+  substring: 18,
+  coverage: 110,
+};
+
+const ARTICLE_SUMMARY_SEARCH_WEIGHTS: SearchTextWeights = {
+  exact: 210,
+  phrase: 175,
+  prefix: 35,
+  token: 30,
+  substring: 10,
+  coverage: 140,
+};
+
+const ARTICLE_SLUG_SEARCH_WEIGHTS: SearchTextWeights = {
+  exact: 250,
+  phrase: 150,
+  prefix: 70,
+  token: 34,
+  substring: 14,
+  coverage: 80,
+};
+
+const ARTICLE_TAXONOMY_SEARCH_WEIGHTS: SearchTextWeights = {
+  exact: 220,
+  phrase: 130,
+  prefix: 55,
+  token: 34,
+  substring: 12,
+  coverage: 75,
+};
+
+const ARTICLE_SECTION_SEARCH_WEIGHTS: SearchTextWeights = {
+  exact: 145,
+  phrase: 120,
+  prefix: 20,
+  token: 20,
+  substring: 7,
+  coverage: 95,
+};
+
+const ARTICLE_COMBINED_SEARCH_WEIGHTS: SearchTextWeights = {
+  exact: 0,
+  phrase: 38,
+  prefix: 0,
+  token: 8,
+  substring: 2,
+  coverage: 90,
+};
 
 function getArticlesPublicRootResolved(): string {
   return resolve(join(__dirname, '..', '..', '..', 'public', 'articles'));
@@ -473,30 +548,6 @@ export class ArticleService {
       .filter((token) => token.length >= 2);
   }
 
-  private normalizeArticleSearchPhrase(trimmed_term: string): string {
-    return trimmed_term.toLowerCase().replace(/\s+/g, ' ').trim();
-  }
-
-  /**
-   * Significant query tokens. Multi-token queries use AND semantics — each token must match at least one field.
-   */
-  private extractArticleSearchTokens(trimmed_term: string): string[] {
-    const pieces = trimmed_term
-      .split(/[^\p{L}\p{N}]+/u)
-      .map((token) => token.trim().toLowerCase())
-      .filter((token) => token.length >= 2);
-
-    const unique = Array.from(new Set(pieces)).slice(
-      0,
-      ARTICLE_SEARCH_MAX_QUERY_TOKENS,
-    );
-
-    if (unique.length) return unique;
-
-    const fallback = this.normalizeArticleSearchPhrase(trimmed_term);
-    return fallback.length >= 2 ? [fallback] : [];
-  }
-
   private buildPublishedSearchWhereForTokens(
     tokens: string[],
   ): Prisma.ArticleWhereInput {
@@ -534,134 +585,118 @@ export class ArticleService {
 
     return {
       status: Status.PUBLISHED,
-      AND: tokens.map((token) => token_clause(token)),
+      OR: tokens.map((token) => token_clause(token)),
     };
-  }
-
-  private looseComparableSlugFromPhrase(phrase: string): string {
-    return phrase
-      .normalize('NFD')
-      .replace(/\p{M}/gu, '')
-      .replace(/[^\p{L}\p{N}]+/gu, '-')
-      .replace(/^-+|-+$/g, '')
-      .toLowerCase();
-  }
-
-  private isUnicodeAlphanumeric(character: string): boolean {
-    return /\p{L}|\p{N}/u.test(character);
-  }
-
-  /** True when `token` occurs in `text` bounded by non-letters/non-digits or string edges (Unicode-aware). */
-  private tokenAppearsDelimited(text: string, token: string): boolean {
-    const haystack = text.toLowerCase();
-    const needle = token.toLowerCase();
-    let start = haystack.indexOf(needle);
-    while (start !== -1) {
-      const end = start + needle.length;
-      const boundary_before =
-        start === 0 || !this.isUnicodeAlphanumeric(haystack[start - 1]!);
-      const boundary_after =
-        end >= haystack.length || !this.isUnicodeAlphanumeric(haystack[end]!);
-      if (boundary_before && boundary_after) return true;
-      start = haystack.indexOf(needle, start + 1);
-    }
-    return false;
   }
 
   private scoreArticleSearch(
     article: ArticleSearchRankingPayload,
-    tokens: string[],
-    phrase_norm: string,
-  ): number {
-    const title_lower = article.title.toLowerCase();
-    const summary_lower = article.summary.toLowerCase();
-    const slug_lower = article.slug.toLowerCase();
+    query: PreparedSearchQuery,
+  ): { score: number; match: ArticleSearchMatch } {
+    const fallback_text = article.summary || article.title;
+    const candidates: Array<{
+      score: number;
+      match: ArticleSearchMatch;
+    }> = [
+      {
+        score: scoreSearchText(
+          article.title,
+          query,
+          ARTICLE_TITLE_SEARCH_WEIGHTS,
+        ).score,
+        match: { field: 'title', text: fallback_text },
+      },
+      {
+        score: scoreSearchText(
+          article.summary,
+          query,
+          ARTICLE_SUMMARY_SEARCH_WEIGHTS,
+        ).score,
+        match: { field: 'summary', text: article.summary },
+      },
+      {
+        score: scoreSearchText(article.slug, query, ARTICLE_SLUG_SEARCH_WEIGHTS)
+          .score,
+        match: { field: 'slug', text: fallback_text },
+      },
+      ...article.tags.map((tag) => ({
+        score: scoreSearchText(tag.name, query, ARTICLE_TAXONOMY_SEARCH_WEIGHTS)
+          .score,
+        match: { field: 'tag' as const, text: fallback_text },
+      })),
+      ...article.categories.map((category) => ({
+        score: scoreSearchText(
+          category.name,
+          query,
+          ARTICLE_TAXONOMY_SEARCH_WEIGHTS,
+        ).score,
+        match: { field: 'category' as const, text: fallback_text },
+      })),
+      ...article.sections.map((section) => ({
+        score: scoreSearchText(
+          `${section.title} ${section.content}`,
+          query,
+          ARTICLE_SECTION_SEARCH_WEIGHTS,
+        ).score,
+        match: {
+          field: 'section' as const,
+          text: this.createSearchExcerpt(
+            `${section.title} ${section.content}`,
+            query,
+          ),
+        },
+      })),
+    ];
 
-    const section_blob = article.sections
-      .map((section) =>
-        `${section.title}\n${section.content}`.toLowerCase(),
-      )
-      .join('\n');
+    const best = candidates.reduce((current, candidate) =>
+      candidate.score > current.score ? candidate : current,
+    );
 
-    let score = 0;
+    const keyword_terms = this.readKeywordTerms(article.metadata?.keywords);
+    const combined_text = [
+      article.title,
+      article.summary,
+      article.slug,
+      ...article.tags.map((tag) => tag.name),
+      ...article.categories.map((category) => category.name),
+      ...keyword_terms,
+      ...article.sections.flatMap((section) => [
+        section.title,
+        section.content,
+      ]),
+    ].join(' ');
+    const combined_score = scoreSearchText(
+      combined_text,
+      query,
+      ARTICLE_COMBINED_SEARCH_WEIGHTS,
+    ).score;
 
-    if (phrase_norm.length >= 2) {
-      const phrase_slugish = phrase_norm.includes(' ')
-        ? this.looseComparableSlugFromPhrase(phrase_norm)
-        : phrase_norm.replace(/\s+/g, '');
+    return {
+      score: best.score + combined_score,
+      match: best.match,
+    };
+  }
 
-      if (title_lower === phrase_norm) score += 220;
-      else if (this.tokenAppearsDelimited(article.title, phrase_norm)) {
-        score += 150;
-      } else if (title_lower.includes(phrase_norm)) {
-        score += 110;
-      }
+  private createSearchExcerpt(
+    text: string,
+    query: PreparedSearchQuery,
+    max_length = 180,
+  ): string {
+    const collapsed = text.replace(/\s+/g, ' ').trim();
+    if (collapsed.length <= max_length) return collapsed;
 
-      if (phrase_slugish.length >= 2) {
-        if (slug_lower === phrase_slugish) score += 80;
-        else if (
-          slug_lower.startsWith(`${phrase_slugish}-`) ||
-          slug_lower.endsWith(`-${phrase_slugish}`) ||
-          slug_lower.includes(`-${phrase_slugish}-`)
-        ) {
-          score += 62;
-        } else if (slug_lower.includes(phrase_slugish)) {
-          score += 48;
-        }
-      }
+    const normalized = normalizeSearchText(collapsed);
+    const needle =
+      (query.phrase && normalized.includes(query.phrase)
+        ? query.phrase
+        : query.tokens.find((token) => normalized.includes(token))) ?? '';
+    const match_index = needle ? normalized.indexOf(needle) : 0;
+    const start = Math.max(0, match_index - Math.floor(max_length / 3));
+    const end = Math.min(collapsed.length, start + max_length);
 
-      if (summary_lower.includes(phrase_norm)) {
-        score += 38;
-        if (
-          phrase_norm.includes(' ') &&
-          this.tokenAppearsDelimited(article.summary, phrase_norm)
-        ) {
-          score += 14;
-        }
-      }
-
-      if (section_blob.includes(phrase_norm)) score += 18;
-    }
-
-    const keyword_terms = this.readKeywordTerms(
-      article.metadata?.keywords,
-    ).map((keyword) => keyword.toLowerCase());
-
-    for (const token of tokens) {
-      const tag_lc = article.tags.map((tg) => tg.name.toLowerCase());
-      const cat_lc = article.categories.map((c) => c.name.toLowerCase());
-
-      if (title_lower === token) score += 72;
-      else if (title_lower.startsWith(`${token} `))
-        score += 48;
-      else if (this.tokenAppearsDelimited(article.title, token))
-        score += 34;
-      else if (title_lower.includes(token)) score += 20;
-
-      if (slug_lower === token) score += 44;
-      else if (
-        slug_lower.startsWith(`${token}-`) ||
-        slug_lower.endsWith(`-${token}`)
-      )
-        score += 30;
-      else if (slug_lower.includes(token)) score += 16;
-
-      if (this.tokenAppearsDelimited(article.summary, token)) score += 16;
-      else if (summary_lower.includes(token)) score += 11;
-
-      if (tag_lc.some((tg) => tg === token)) score += 28;
-      else if (tag_lc.some((tg) => tg.includes(token))) score += 14;
-
-      if (cat_lc.some((c) => c.includes(token))) score += 10;
-
-      if (keyword_terms.some((k) => k === token || k.includes(token))) {
-        score += 9;
-      }
-
-      if (section_blob.includes(token)) score += 5;
-    }
-
-    return score;
+    return `${start > 0 ? '…' : ''}${collapsed.slice(start, end).trim()}${
+      end < collapsed.length ? '…' : ''
+    }`;
   }
 
   private rankingPayloadToPublicShape(
@@ -1320,12 +1355,13 @@ export class ArticleService {
 
     if (!search_term) return this.findAll({ skip, take });
 
-    const phrase_norm = this.normalizeArticleSearchPhrase(search_term);
-    const tokens = this.extractArticleSearchTokens(search_term);
+    const query = prepareSearchQuery(search_term);
 
-    if (!tokens.length) return this.findAll({ skip, take });
+    if (!query.tokens.length) return this.findAll({ skip, take });
 
-    const where = this.buildPublishedSearchWhereForTokens(tokens);
+    const where = this.buildPublishedSearchWhereForTokens(
+      searchTokenVariants(query.tokens),
+    );
 
     const candidate_cap = Math.min(
       Math.max(ARTICLE_SEARCH_MAX_CANDIDATES, skip + take + 200),
@@ -1342,10 +1378,7 @@ export class ArticleService {
     });
 
     const ranked_rows = rows
-      .map((row) => ({
-        row,
-        score: this.scoreArticleSearch(row, tokens, phrase_norm),
-      }))
+      .map((row) => ({ row, ...this.scoreArticleSearch(row, query) }))
       .sort((left, right) => {
         if (right.score !== left.score) return right.score - left.score;
 
@@ -1357,14 +1390,23 @@ export class ArticleService {
           right.row.updated_at.getTime(),
           right.row.created_at.getTime(),
         );
-        return right_time - left_time;
+        if (right_time !== left_time) return right_time - left_time;
+        return left.row.id.localeCompare(right.row.id);
       });
 
-    const page_rows = ranked_rows
-      .slice(skip, skip + take)
-      .map(({ row }) => this.rankingPayloadToPublicShape(row));
+    const page_ranked_rows = ranked_rows.slice(skip, skip + take);
+    const page_rows = page_ranked_rows.map(({ row }) =>
+      this.rankingPayloadToPublicShape(row),
+    );
+    const public_articles = await this.toPublicArticlesWithFallbacks(page_rows);
+    const matches_by_id = new Map(
+      page_ranked_rows.map(({ row, match }) => [row.id, match]),
+    );
 
-    return this.toPublicArticlesWithFallbacks(page_rows);
+    return public_articles.map((article) => ({
+      ...article,
+      search_match: matches_by_id.get(article.id),
+    }));
   }
 
   async findRelated({

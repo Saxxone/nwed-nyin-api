@@ -84,8 +84,12 @@ describe('ArticleService', () => {
       $transaction: jest.fn(),
     };
     prisma.$transaction.mockImplementation(
-      async (fn: (tx: { article: typeof prisma.article; file: typeof prisma.file }) => Promise<unknown>) =>
-        fn({ article: prisma.article, file: prisma.file }),
+      async (
+        fn: (tx: {
+          article: typeof prisma.article;
+          file: typeof prisma.file;
+        }) => Promise<unknown>,
+      ) => fn({ article: prisma.article, file: prisma.file }),
     );
     prisma.articleVersion.findFirst.mockResolvedValue(null);
     userService = {
@@ -208,7 +212,7 @@ describe('ArticleService', () => {
     expect(find_many_args.where).toEqual(
       expect.objectContaining({
         status: 'PUBLISHED',
-        AND: [
+        OR: [
           expect.objectContaining({
             OR: expect.arrayContaining([
               { title: { contains: 'title' } },
@@ -255,6 +259,101 @@ describe('ArticleService', () => {
       'typography-publishing',
       'weekly-notes',
     ]);
+    expect(ranked[0]?.search_match).toEqual({
+      field: 'title',
+      text: 'How type choices affect legibility.',
+    });
+  });
+
+  it('allows partial natural-language candidates and rewards coverage across fields', async () => {
+    const partial_hit = makeArticle({
+      id: 'partial-hit',
+      title: 'Typography notes',
+      slug: 'typography-notes',
+      summary: 'A short reference.',
+      sections: [],
+      updated_at: new Date('2026-03-01T00:00:00.000Z'),
+    });
+    const broad_hit = makeArticle({
+      id: 'broad-hit',
+      title: 'Community publishing',
+      slug: 'community-publishing',
+      summary: 'A practical typography guide.',
+      sections: [],
+      updated_at: new Date('2026-02-01T00:00:00.000Z'),
+    });
+    prisma.article.findMany.mockResolvedValue([partial_hit, broad_hit]);
+
+    const ranked = await service.search({
+      term: 'a guide to community typography',
+      skip: 0,
+      take: 5,
+    });
+
+    const search_call = (prisma.article.findMany as AnyMock).mock.calls[0][0];
+    expect(search_call.where).toEqual(
+      expect.objectContaining({
+        status: 'PUBLISHED',
+        OR: expect.arrayContaining([
+          expect.objectContaining({
+            OR: expect.arrayContaining([
+              { title: { contains: 'guide' } },
+              { summary: { contains: 'guide' } },
+            ]),
+          }),
+          expect.objectContaining({
+            OR: expect.arrayContaining([{ title: { contains: 'community' } }]),
+          }),
+        ]),
+      }),
+    );
+    expect(ranked.map((article) => article.slug)).toEqual([
+      'community-publishing',
+      'typography-notes',
+    ]);
+  });
+
+  it('returns a matching section excerpt when section content is strongest', async () => {
+    prisma.article.findMany.mockResolvedValue([
+      makeArticle({
+        title: 'General language notes',
+        slug: 'general-language-notes',
+        summary: 'A broad overview.',
+        sections: [
+          {
+            title: 'Reading practice',
+            content:
+              'Community learners use pronunciation exercises to improve fluent reading.',
+          },
+        ],
+      }),
+    ]);
+
+    const [result] = await service.search({
+      term: 'pronunciation exercises fluent reading',
+      skip: 0,
+      take: 5,
+    });
+
+    expect(result?.search_match.field).toBe('section');
+    expect(result?.search_match.text).toContain('pronunciation exercises');
+  });
+
+  it('applies pagination after relevance ranking', async () => {
+    prisma.article.findMany.mockResolvedValue([
+      makeArticle({ id: 'third', title: 'Guide notes', slug: 'guide-notes' }),
+      makeArticle({ id: 'first', title: 'Guide', slug: 'guide' }),
+      makeArticle({
+        id: 'second',
+        title: 'A guide for readers',
+        slug: 'reader-guide',
+      }),
+    ]);
+
+    const results = await service.search({ term: 'guide', skip: 1, take: 1 });
+
+    expect(results).toHaveLength(1);
+    expect(results[0]?.slug).toBe('guide-notes');
   });
 
   it('suggests related articles from the current article title and summary only', async () => {

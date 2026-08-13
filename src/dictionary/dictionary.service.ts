@@ -7,9 +7,61 @@ import {
 import { FileService } from '../file/file.service';
 import { Prisma, Role, User, Word } from '../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  prepareSearchQuery,
+  searchTokenVariants,
+  scoreSearchText,
+  type PreparedSearchQuery,
+  type SearchTextWeights,
+} from '../search/search-relevance';
 import { UserService } from '../user/user.service';
 import { CreateDictionaryDto } from './dto/create-dictionary.dto';
 import { UpdateDictionaryDto } from './dto/update-dictionary.dto';
+
+export type DictionarySearchMatch = {
+  field: 'term' | 'alt_spelling' | 'meaning';
+  text: string;
+};
+
+export type DictionarySearchHit = Word & {
+  definitions: Array<{
+    id: string;
+    meaning: string;
+    [key: string]: unknown;
+  }>;
+  search_match: DictionarySearchMatch;
+};
+
+type DictionarySearchCandidate = Omit<DictionarySearchHit, 'search_match'>;
+
+const DICTIONARY_SEARCH_MAX_CANDIDATES = 400;
+
+const DICTIONARY_TERM_WEIGHTS: SearchTextWeights = {
+  exact: 600,
+  phrase: 260,
+  prefix: 120,
+  token: 52,
+  substring: 24,
+  coverage: 90,
+};
+
+const DICTIONARY_ALT_SPELLING_WEIGHTS: SearchTextWeights = {
+  exact: 520,
+  phrase: 230,
+  prefix: 100,
+  token: 46,
+  substring: 20,
+  coverage: 80,
+};
+
+const DICTIONARY_MEANING_WEIGHTS: SearchTextWeights = {
+  exact: 320,
+  phrase: 240,
+  prefix: 35,
+  token: 34,
+  substring: 8,
+  coverage: 180,
+};
 
 @Injectable()
 export class DictionaryService {
@@ -322,36 +374,111 @@ export class DictionaryService {
   }
 
   /**
-   * Searches for words matching a given term.
+   * Searches terms, alternative spellings, and definition meanings, then
+   * returns the five strongest reverse-dictionary matches.
    * @param term - The search term.
-   * @returns An array of words matching the search term.  Returns a maximum of 5 words.
-   * @throws NotFoundException if no words are found.
+   * @returns An array of ranked words with metadata describing the best match.
    */
-  async search(term: string): Promise<Word[]> {
-    return this.prisma.word.findMany({
-      where: {
-        AND: [
-          {
-            OR: [
-              { term: { contains: term } },
-              { alt_spelling: { contains: term } },
-            ],
-          },
-          this.alive_word_filter,
-        ],
-      },
-      include: {
+  async search(term: string): Promise<DictionarySearchHit[]> {
+    const query = prepareSearchQuery(term);
+    if (!query.phrase || query.tokens.length === 0) return [];
+
+    const token_filters: Prisma.WordWhereInput[] = searchTokenVariants(
+      query.tokens,
+    ).flatMap((token) => [
+      { term: { contains: token } },
+      { alt_spelling: { contains: token } },
+      {
         definitions: {
-          include: {
-            part_of_speech: true,
-            examples: true,
-            synonyms: true,
-            antonyms: true,
-          },
+          some: { meaning: { contains: token } },
         },
       },
-      take: 5,
+    ]);
+
+    const words = await this.prisma.word.findMany({
+      where: {
+        ...this.alive_word_filter,
+        OR: token_filters,
+      },
+      include: this.word_include,
+      orderBy: [{ updated_at: 'desc' }, { id: 'asc' }],
+      take: DICTIONARY_SEARCH_MAX_CANDIDATES,
     });
+
+    return words
+      .map((word) => this.rankDictionarySearchHit(word, query))
+      .filter((hit) => hit.score > 0)
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+
+        const normalized_term_order = left.word.term.localeCompare(
+          right.word.term,
+          undefined,
+          { sensitivity: 'base' },
+        );
+        if (normalized_term_order !== 0) return normalized_term_order;
+
+        const term_order = left.word.term.localeCompare(right.word.term);
+        if (term_order !== 0) return term_order;
+        return left.word.id.localeCompare(right.word.id);
+      })
+      .slice(0, 5)
+      .map(({ word, match }) => ({
+        ...word,
+        search_match: match,
+      })) as DictionarySearchHit[];
+  }
+
+  private rankDictionarySearchHit(
+    word: DictionarySearchCandidate,
+    query: PreparedSearchQuery,
+  ): {
+    word: typeof word;
+    score: number;
+    match: DictionarySearchMatch;
+  } {
+    const fallback_meaning = word.definitions[0]?.meaning ?? word.term;
+    const term_score = scoreSearchText(
+      word.term,
+      query,
+      DICTIONARY_TERM_WEIGHTS,
+    );
+    const alt_spelling_score = scoreSearchText(
+      word.alt_spelling,
+      query,
+      DICTIONARY_ALT_SPELLING_WEIGHTS,
+    );
+
+    let best_score = term_score.score;
+    let best_match: DictionarySearchMatch = {
+      field: 'term',
+      text: fallback_meaning,
+    };
+
+    if (alt_spelling_score.score > best_score) {
+      best_score = alt_spelling_score.score;
+      best_match = {
+        field: 'alt_spelling',
+        text: fallback_meaning,
+      };
+    }
+
+    for (const definition of word.definitions) {
+      const definition_score = scoreSearchText(
+        definition.meaning,
+        query,
+        DICTIONARY_MEANING_WEIGHTS,
+      );
+      if (definition_score.score > best_score) {
+        best_score = definition_score.score;
+        best_match = {
+          field: 'meaning',
+          text: definition.meaning,
+        };
+      }
+    }
+
+    return { word, score: best_score, match: best_match };
   }
 
   async update(

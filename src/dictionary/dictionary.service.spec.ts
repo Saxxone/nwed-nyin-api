@@ -117,7 +117,7 @@ describe('DictionaryService', () => {
     await expect(service.findAllPartsOfSpeech()).resolves.toBe(partsOfSpeech);
   });
 
-  it('searches term and alternative spelling fields', async () => {
+  it('searches term, alternative spelling, and definition meaning fields', async () => {
     prisma.word.findMany.mockResolvedValue([]);
 
     await expect(service.search('ulo')).resolves.toEqual([]);
@@ -125,18 +125,114 @@ describe('DictionaryService', () => {
     expect(prisma.word.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          AND: [
+          deleted_at: null,
+          OR: [
+            { term: { contains: 'ulo' } },
+            { alt_spelling: { contains: 'ulo' } },
             {
-              OR: [
-                { term: { contains: 'ulo' } },
-                { alt_spelling: { contains: 'ulo' } },
-              ],
+              definitions: {
+                some: { meaning: { contains: 'ulo' } },
+              },
             },
-            { deleted_at: null },
           ],
         },
-        take: 5,
+        take: 400,
       }),
     );
+  });
+
+  it('returns the word whose definition best matches a natural description', async () => {
+    prisma.word.findMany.mockResolvedValue([
+      {
+        id: 'gathering-place',
+        term: 'square',
+        alt_spelling: null,
+        definitions: [
+          {
+            id: 'square-definition',
+            meaning: 'A public place where people gather.',
+          },
+        ],
+      },
+      {
+        id: 'home-word',
+        term: 'ufok',
+        alt_spelling: 'ufọk',
+        definitions: [
+          { id: 'shape-definition', meaning: 'A structure.' },
+          {
+            id: 'home-definition',
+            meaning: 'House, home, or a place where people live.',
+          },
+        ],
+      },
+    ]);
+
+    const results = await service.search('place where people live');
+
+    expect(results[0]).toEqual(
+      expect.objectContaining({
+        id: 'home-word',
+        search_match: {
+          field: 'meaning',
+          text: 'House, home, or a place where people live.',
+        },
+      }),
+    );
+  });
+
+  it('ranks exact terms ahead of meaning-only matches', async () => {
+    prisma.word.findMany.mockResolvedValue([
+      {
+        id: 'meaning-match',
+        term: 'ima',
+        alt_spelling: null,
+        definitions: [{ id: 'definition-1', meaning: 'A house full of care.' }],
+      },
+      {
+        id: 'exact-term',
+        term: 'house',
+        alt_spelling: null,
+        definitions: [{ id: 'definition-2', meaning: 'A building.' }],
+      },
+    ]);
+
+    const results = await service.search('house');
+
+    expect(results.map((result) => result.id)).toEqual([
+      'exact-term',
+      'meaning-match',
+    ]);
+    expect(results[0]?.search_match.field).toBe('term');
+  });
+
+  it('limits results to five and resolves score ties alphabetically then by id', async () => {
+    prisma.word.findMany.mockResolvedValue(
+      ['zeta', 'beta', 'alpha', 'delta', 'gamma', 'epsilon'].map(
+        (term, index) => ({
+          id: `word-${index}`,
+          term,
+          alt_spelling: null,
+          definitions: [
+            { id: `definition-${index}`, meaning: 'A shared place.' },
+          ],
+        }),
+      ),
+    );
+
+    const results = await service.search('place');
+
+    expect(results.map((result) => result.term)).toEqual([
+      'alpha',
+      'beta',
+      'delta',
+      'epsilon',
+      'gamma',
+    ]);
+  });
+
+  it('does not query the database for a blank search', async () => {
+    await expect(service.search('  ')).resolves.toEqual([]);
+    expect(prisma.word.findMany).not.toHaveBeenCalled();
   });
 });
